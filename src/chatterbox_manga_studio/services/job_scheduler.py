@@ -256,6 +256,42 @@ class JobScheduler:
         )
         return job
 
+    async def retry_job(self, job_id: str) -> Job:
+        """Requeue a failed/cancelled job for another attempt."""
+
+        job = await self.require_job(job_id)
+        if job.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
+            return job
+        job.status = JobStatus.QUEUED
+        job.error = None
+        job.cancelled_at = None
+        job.completed_at = None
+        await self._save_job(job)
+        await self.storage.enqueue(self.QUEUE_NAME, {"job_id": job.id}, priority=job.priority)
+        await self.event_bus.publish(
+            EventType.JOB_RESUMED,
+            source="JobScheduler",
+            payload={"job_id": job.id, "retry": True},
+            correlation_id=job.id,
+        )
+        return job
+
+    async def delete_job(self, job_id: str) -> bool:
+        """Delete a persisted job record.
+
+        Queue tombstones are skipped by claim_next_job if encountered later.
+        """
+
+        deleted = await self.storage.delete_kv(self._job_key(job_id))
+        if deleted:
+            await self.event_bus.publish(
+                EventType.JOB_CANCELLED,
+                source="JobScheduler",
+                payload={"job_id": job_id, "deleted": True},
+                correlation_id=job_id,
+            )
+        return deleted
+
     async def counts_by_status(self) -> dict[JobStatus, int]:
         jobs = await self.list_jobs(limit=10_000)
         return {status: sum(1 for job in jobs if job.status == status) for status in JobStatus}
