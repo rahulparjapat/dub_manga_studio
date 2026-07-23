@@ -73,7 +73,7 @@ def test_models_workers_providers_endpoints(tmp_path):
         assert client.get("/api/v1/models/chatterbox/health").json()["data"]["healthy"] is True
         assert client.post("/api/v1/models/chatterbox/unload").json()["ok"] is True
 
-        reservation = client.post("/api/v1/workers/reservations", json={"language": "en"})
+        reservation = client.post("/api/v1/workers/reservations", json={"model_id": "worker-model", "language": "en"})
         assert reservation.status_code == 201
         assert reservation.json()["worker_id"] == "w1"
         assert client.delete(f"/api/v1/workers/reservations/{reservation.json()['reservation_id']}").json()["data"]["released"] is True
