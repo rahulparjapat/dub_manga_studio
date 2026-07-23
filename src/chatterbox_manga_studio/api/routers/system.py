@@ -4,11 +4,13 @@ import platform
 from importlib.metadata import version, PackageNotFoundError
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 
 from ... import __version__
 from ...common.config import load_config
 from ..dependencies import get_state
 from ..schemas import OkResponse
+from ...services.observability import metrics as metrics_registry
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -49,3 +51,8 @@ async def diagnostics(state=Depends(get_state)):
     except PackageNotFoundError:
         fastapi_version = "unknown"
     return OkResponse(data={"fastapi": fastapi_version, "platform": platform.platform(), "openapi": "/openapi.json", "storage": await state.storage.health_check_all()})
+
+
+@router.get("/prometheus", response_class=PlainTextResponse)
+async def prometheus_metrics():
+    return metrics_registry.render_prometheus()

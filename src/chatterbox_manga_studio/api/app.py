@@ -5,11 +5,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..common.logging_util import get_logger
 from .middleware import install_exception_handlers, install_middleware
+from ..services.observability import metrics as metrics_registry
 from .routers import jobs, models, pipeline, projects, providers, system, uploads, workers
 from .state import APIState, build_api_state
 from .websocket.manager import WebSocketManager
@@ -79,6 +80,10 @@ def create_app(
     @app.get("/health", include_in_schema=False)
     async def root_health():
         return JSONResponse({"ok": True, "service": "chatterbox-manga-studio", "api": "/api/v1/system/health"})
+
+    @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
+    async def root_metrics():
+        return metrics_registry.render_prometheus()
 
     _install_frontend(app, app.state.frontend_dist)
     return app

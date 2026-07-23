@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .events import EventBus, EventType
+from .observability import metrics
 
 
 class ProviderHealth(StrEnum):
@@ -73,6 +74,10 @@ class _ProviderRecord:
     failure_count: int = 0
     success_count: int = 0
     cooldown_until: datetime | None = None
+    circuit_open_until: datetime | None = None
+    circuit_failure_threshold: int = 3
+    timeout_seconds: float = 120.0
+    backoff_base_seconds: float = 0.5
     request_times: list[datetime] = field(default_factory=list)
     last_health_check: datetime | None = None
     last_error: str | None = None
@@ -94,6 +99,9 @@ class ProviderManager:
         retries: int = 2,
         cooldown_seconds: float = 30,
         rate_limit: RateLimitConfig | None = None,
+        timeout_seconds: float = 120.0,
+        circuit_failure_threshold: int = 3,
+        backoff_base_seconds: float = 0.5,
     ) -> None:
         """Register a provider adapter.
 
@@ -108,6 +116,9 @@ class ProviderManager:
                 retries=max(0, retries),
                 cooldown_seconds=max(0, cooldown_seconds),
                 rate_limit=rate_limit,
+                timeout_seconds=timeout_seconds,
+                circuit_failure_threshold=max(1, circuit_failure_threshold),
+                backoff_base_seconds=max(0.0, backoff_base_seconds),
             )
         await self.event_bus.publish(
             EventType.PROVIDER_REGISTERED,
@@ -138,13 +149,17 @@ class ProviderManager:
             for attempt in range(1, attempts_for_provider + 1):
                 try:
                     await self._apply_rate_limit(record)
-                    result = await record.provider.invoke(req)
+                    started = datetime.now(UTC)
+                    result = await asyncio.wait_for(record.provider.invoke(req), timeout=record.timeout_seconds)
+                    metrics.inc("cms_provider_requests_total", provider=record.provider.name, operation=req.operation, status="success")
+                    metrics.observe("cms_provider_request_duration_ms", (datetime.now(UTC) - started).total_seconds() * 1000, provider=record.provider.name, operation=req.operation)
                     await self._mark_success(record.provider.name)
                     return ProviderResponse(provider=record.provider.name, result=result, attempts=attempt)
                 except Exception as exc:  # noqa: BLE001 - provider adapters normalize later
                     attempted_errors.append(f"{record.provider.name}: {exc}")
+                    metrics.inc("cms_provider_requests_total", provider=record.provider.name, operation=req.operation, status="error")
                     if attempt < attempts_for_provider:
-                        await asyncio.sleep(min(1.0 * attempt, 5.0))
+                        await asyncio.sleep(min(record.backoff_base_seconds * (2 ** (attempt - 1)), 10.0))
                         continue
                     await self._mark_failure(record.provider.name, str(exc))
                     break
@@ -156,12 +171,17 @@ class ProviderManager:
             now = datetime.now(UTC)
             candidates: list[_ProviderRecord] = []
             for record in self._providers.values():
+                if record.circuit_open_until and record.circuit_open_until > now:
+                    record.status = ProviderHealth.UNHEALTHY
+                    continue
                 if record.cooldown_until and record.cooldown_until > now:
                     record.status = ProviderHealth.COOLDOWN
                     continue
                 if record.status in {ProviderHealth.UNHEALTHY, ProviderHealth.COOLDOWN}:
                     # A provider exits cooldown on the next health check or after time.
-                    if record.cooldown_until and record.cooldown_until <= now:
+                    if record.cooldown_until and record.cooldown_until <= now and not (record.circuit_open_until and record.circuit_open_until > now):
+                        record.status = ProviderHealth.DEGRADED
+                    elif record.cooldown_until is None and not (record.circuit_open_until and record.circuit_open_until > now):
                         record.status = ProviderHealth.DEGRADED
                     else:
                         continue
@@ -210,8 +230,12 @@ class ProviderManager:
             record = self._providers[name]
             record.failure_count += 1
             record.last_error = error
+            now = datetime.now(UTC)
             record.status = ProviderHealth.COOLDOWN if record.cooldown_seconds else ProviderHealth.UNHEALTHY
-            record.cooldown_until = datetime.now(UTC) + timedelta(seconds=record.cooldown_seconds)
+            record.cooldown_until = now + timedelta(seconds=record.cooldown_seconds)
+            if record.failure_count >= record.circuit_failure_threshold:
+                record.status = ProviderHealth.UNHEALTHY
+                record.circuit_open_until = now + timedelta(seconds=max(record.cooldown_seconds * 2, 60))
         await self.event_bus.publish(
             EventType.PROVIDER_HEALTH_CHANGED,
             source="ProviderManager",
@@ -257,6 +281,8 @@ class ProviderManager:
                     "failure_count": record.failure_count,
                     "success_count": record.success_count,
                     "cooldown_until": record.cooldown_until.isoformat() if record.cooldown_until else None,
+                    "circuit_open_until": record.circuit_open_until.isoformat() if record.circuit_open_until else None,
+                    "timeout_seconds": record.timeout_seconds,
                     "last_error": record.last_error,
                 }
                 for name, record in self._providers.items()

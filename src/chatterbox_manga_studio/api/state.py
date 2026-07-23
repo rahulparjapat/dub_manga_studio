@@ -23,6 +23,7 @@ from ..services.plugin_registry import PluginRegistry, build_registry_from_confi
 from ..services.worker_runtime import WorkerRuntime
 from .lifecycle import BackgroundServiceManager, initialize_providers, initialize_worker_runtimes, initialize_workers
 from ..services.storage_manager import StorageManager, create_filesystem_stores
+from ..services.storage_manager.config import StorageRoutingConfig, load_storage_routing_from_env
 
 
 @dataclass
@@ -41,6 +42,7 @@ class APIState:
     worker_runtimes: dict[str, WorkerRuntime] = field(default_factory=dict)
     background: BackgroundServiceManager | None = None
     startup_health: dict[str, Any] = field(default_factory=dict)
+    storage_routing: StorageRoutingConfig | None = None
 
 
 async def build_api_state(*, data_root: Path | None = None, noop_models: bool = False) -> APIState:
@@ -49,6 +51,7 @@ async def build_api_state(*, data_root: Path | None = None, noop_models: bool = 
     root = data_root or (PROJECT_ROOT / "data" / "api")
     root.mkdir(parents=True, exist_ok=True)
     bus = EventBus()
+    storage_routing = load_storage_routing_from_env()
     storage = StorageManager(event_bus=bus)
     create_filesystem_stores(storage, root / "storage")
     await storage.initialize_all()
@@ -76,8 +79,9 @@ async def build_api_state(*, data_root: Path | None = None, noop_models: bool = 
         "workers": await workers.snapshot(),
         "gpus": await gpus.snapshot(),
         "plugins": registry.list_model_ids(),
+        "storage_routing": storage_routing.to_dict(),
     }
-    return APIState(bus, storage, jobs, workflow, providers, models, workers, gpus, pipeline_factory, upload_root, registry, worker_runtimes, background, startup_health)
+    return APIState(bus, storage, jobs, workflow, providers, models, workers, gpus, pipeline_factory, upload_root, registry, worker_runtimes, background, startup_health, storage_routing)
 
 
 def _build_gpu_scheduler(config: dict, *, event_bus: EventBus) -> GPUScheduler:
