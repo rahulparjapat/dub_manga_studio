@@ -108,12 +108,14 @@ class VoxCPM2Worker(BaseWorker):
                 # Always Controllable: reference_wav + style prefix (prompt_text ignored)
                 pass  # reference_wav_path already set; style prefix in text is used
             else:  # hybrid (default)
-                if cue_index == 0 and ref_text:
-                    # First cue: Hi-Fi for maximum identity fidelity
+                if ref_text and not has_style_prefix and cue_index == 0:
+                    # First neutral cue: Hi-Fi for maximum identity fidelity.
+                    # If a style prefix is present, stay controllable so emotion
+                    # instructions are not ignored by VoxCPM2's Hi-Fi prompt path.
                     kw["prompt_wav_path"] = req.reference_wav
                     kw["prompt_text"] = ref_text
                 else:
-                    # Subsequent cues: Controllable for style/emotion consistency
+                    # Subsequent or styled cues: Controllable for style/emotion consistency
                     # Style prefix in text will be used automatically
                     pass
         wav = self._model.generate(**kw)
