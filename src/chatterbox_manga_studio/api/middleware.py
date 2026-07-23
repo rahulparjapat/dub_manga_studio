@@ -16,8 +16,42 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from ..common.logging_util import get_logger
 from ..services.storage_manager import StorageError
 from .schemas import ErrorResponse
+from .auth import AuthBackend
+from ..services.observability import metrics
 
 log = get_logger("api")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if request.url.scheme == "https":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, *, backend: AuthBackend | None = None) -> None:
+        super().__init__(app)
+        self.backend = backend or AuthBackend()
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/"):
+            try:
+                request.state.principal = await self.backend.authenticate(
+                    request.headers.get("X-API-Key"),
+                    request.headers.get("Authorization"),
+                )
+            except HTTPException as exc:
+                return JSONResponse(
+                    ErrorResponse(error=str(exc.detail), code="UNAUTHORIZED", request_id=getattr(request.state, "request_id", None)).model_dump(),
+                    status_code=exc.status_code,
+                )
+        return await call_next(request)
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -37,6 +71,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 status_code=504,
             )
         elapsed_ms = (time.perf_counter() - started) * 1000
+        metrics.inc("cms_http_requests_total", method=request.method, path=request.url.path, status=getattr(response, "status_code", 0))
+        metrics.observe("cms_http_request_duration_ms", elapsed_ms, method=request.method, path=request.url.path)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Response-Time-ms"] = f"{elapsed_ms:.2f}"
         log.info("%s %s %s %.2fms", request.method, request.url.path, response.status_code, elapsed_ms)
@@ -64,6 +100,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 def install_middleware(app: FastAPI) -> None:
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(AuthenticationMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=1024)

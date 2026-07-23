@@ -69,6 +69,7 @@ class UploadInitRequest(BaseModel):
     size_bytes: int | None = Field(default=None, ge=0)
     content_type: str | None = None
     resumable: bool = True
+    sha256: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{64}$")
 
     @field_validator("filename")
     @classmethod

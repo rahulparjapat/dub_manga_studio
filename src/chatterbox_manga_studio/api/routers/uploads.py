@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -27,7 +28,7 @@ async def init_upload(request: UploadInitRequest, state=Depends(get_state)):
     upload_id = str(uuid4())
     root = state.upload_root / upload_id
     root.mkdir(parents=True, exist_ok=True)
-    meta = {**request.model_dump(), "upload_id": upload_id, "received_bytes": 0, "complete": False}
+    meta = {**request.model_dump(), "upload_id": upload_id, "received_bytes": 0, "complete": False, "sha256_actual": None}
     await state.storage.set_kv(META + upload_id, meta)
     return meta
 
@@ -54,9 +55,14 @@ async def complete_upload(upload_id: str, state=Depends(get_state)):
         raise HTTPException(status_code=404, detail="upload not found")
     root = state.upload_root / upload_id
     final = root / meta["filename"]
+    digest = hashlib.sha256()
     with final.open("wb") as out:
         for part in sorted(root.glob("chunk-*.part")):
-            out.write(part.read_bytes())
+            data = part.read_bytes(); digest.update(data); out.write(data)
+    actual = digest.hexdigest()
+    if meta.get("sha256") and actual.lower() != str(meta["sha256"]).lower():
+        raise HTTPException(status_code=400, detail="upload checksum mismatch")
+    meta["sha256_actual"] = actual
     object_key = f"uploads/{upload_id}/{meta['filename']}"
     await state.storage.put_object(object_key, final.read_bytes(), content_type=meta.get("content_type"))
     meta.update({"complete": True, "object_key": object_key})
