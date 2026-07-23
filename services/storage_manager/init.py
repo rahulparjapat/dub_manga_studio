@@ -1,18 +1,16 @@
 """Storage manager initialization and configuration."""
-from __future__ import annotations
-from pathlib import Path
-from typing import Any, Optional
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from .filesystem import create_filesystem_stores
+from .s3 import S3ObjectStore
 from .storage_manager import (
     StorageManager,
-    StorageBackend,
     set_storage_manager,
-    get_storage_manager,
 )
-from .filesystem import create_filesystem_stores
-from .postgres import create_postgres_stores
-from .redis import create_redis_stores
-from .s3 import S3ObjectStore
 
 
 async def create_storage_manager(
@@ -34,12 +32,10 @@ async def create_storage_manager(
     # Determine data root
     if data_root is None:
         from core.paths import PROJECT_ROOT
+
         data_root = PROJECT_ROOT / "data"
 
     # Track which backends are available
-    has_postgres = False
-    has_redis = False
-    has_s3 = False
 
     # Filesystem stores (always available)
     create_filesystem_stores(
@@ -56,6 +52,7 @@ async def create_storage_manager(
     if pg_config.get("enabled", False):
         try:
             import asyncpg
+
             pool = await asyncpg.create_pool(
                 host=pg_config.get("host", "localhost"),
                 port=pg_config.get("port", 5432),
@@ -67,6 +64,7 @@ async def create_storage_manager(
                 command_timeout=60,
             )
             from .postgres import create_postgres_stores
+
             create_postgres_stores(
                 manager,
                 pool,
@@ -75,9 +73,9 @@ async def create_storage_manager(
                 default_queue=config.get("default_queue_store") == "postgres",
                 default_lock=config.get("default_lock_store") == "postgres",
             )
-            has_postgres = True
         except Exception as e:
             import logging
+
             logging.getLogger("storage").warning(f"PostgreSQL storage unavailable: {e}")
 
     # Redis stores
@@ -85,6 +83,7 @@ async def create_storage_manager(
     if redis_config.get("enabled", False):
         try:
             import redis.asyncio as redis
+
             client = redis.Redis(
                 host=redis_config.get("host", "localhost"),
                 port=redis_config.get("port", 6379),
@@ -97,6 +96,7 @@ async def create_storage_manager(
             # Test connection
             await client.ping()
             from .redis import create_redis_stores
+
             create_redis_stores(
                 manager,
                 client,
@@ -105,9 +105,9 @@ async def create_storage_manager(
                 default_queue=config.get("default_queue_store") == "redis",
                 default_lock=config.get("default_lock_store") == "redis",
             )
-            has_redis = True
         except Exception as e:
             import logging
+
             logging.getLogger("storage").warning(f"Redis storage unavailable: {e}")
 
     # S3 stores
@@ -124,18 +124,18 @@ async def create_storage_manager(
                 prefix=s3_config.get("prefix", ""),
             )
             await s3_store.initialize()
-            from ..storage_manager import StorageManager
-            manager.register_object_store("s3", s3_store, default=config.get("default_object_store") == "s3")
-            has_s3 = True
+            manager.register_object_store(
+                "s3", s3_store, default=config.get("default_object_store") == "s3"
+            )
         except Exception as e:
             import logging
+
             logging.getLogger("storage").warning(f"S3 storage unavailable: {e}")
 
     # Initialize all backends
     await manager.initialize_all()
 
     # Set as global instance
-    from .storage_manager import set_storage_manager
     set_storage_manager(manager)
 
     return manager

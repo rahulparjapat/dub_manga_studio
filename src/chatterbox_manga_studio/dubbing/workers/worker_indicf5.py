@@ -10,9 +10,12 @@ CRITICAL Roman-Hinglish handling (verified from harrrshall/hinglish-tts):
   target is Roman/Devanagari-preferred so pronunciation is native and complete.
 - If transliteration lib is missing, we fall back to raw text with a warning.
 """
+
 from __future__ import annotations
+
 import os
 import sys
+
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +31,7 @@ class IndicF5Worker(BaseWorker):
     def load_model(self):
         import torch
         from transformers import AutoModel
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self._device = device
         self._model = AutoModel.from_pretrained(REPO_ID, trust_remote_code=True)
@@ -36,10 +40,13 @@ class IndicF5Worker(BaseWorker):
         self._xlit = None
         try:
             from ai4bharat.transliteration import XlitEngine
+
             self._xlit = XlitEngine("hi", beam_width=10, rescore=False)
         except Exception as e:
-            print(f"[indicf5] transliteration unavailable ({e}); "
-                  f"Roman input used as-is.", flush=True)
+            print(
+                f"[indicf5] transliteration unavailable ({e}); " f"Roman input used as-is.",
+                flush=True,
+            )
 
     def _prep_text(self, req: GenRequest) -> str:
         text = req.text
@@ -63,9 +70,12 @@ class IndicF5Worker(BaseWorker):
 
     def synthesize(self, req: GenRequest) -> float:
         import soundfile as sf
+
         if not req.reference_wav or not req.reference_text:
-            raise ValueError("IndicF5 requires a reference audio + its transcript. "
-                             "Provide a saved reference voice with transcript.")
+            raise ValueError(
+                "IndicF5 requires a reference audio + its transcript. "
+                "Provide a saved reference voice with transcript."
+            )
         text = self._prep_text(req)
         audio = self._model(text, ref_audio_path=req.reference_wav, ref_text=req.reference_text)
         audio = np.asarray(audio)

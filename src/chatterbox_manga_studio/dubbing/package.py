@@ -1,10 +1,13 @@
 """Dubbing package forwarding + versioning (Tab2 -> Tab3)."""
+
 from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
-from ..common.paths import edition_dir
+
 from ..common.logging_util import get_logger
+from ..common.paths import edition_dir
 
 log = get_logger("package")
 
@@ -40,8 +43,9 @@ def forward_package(project_id: str, target: str, payload: dict) -> str:
     payload = dict(payload)
     payload["_version"] = version
     payload["_created"] = time.time()
-    (d / f"{version}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False),
-                                       encoding="utf-8")
+    (d / f"{version}.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     log.info("forwarded dubbing package %s for %s/%s", version, project_id, target)
     return version
 
@@ -56,7 +60,7 @@ def load_package(project_id: str, target: str, version: str | None = None) -> di
         if not f.exists():
             return None
     else:
-        f = files[-1]     # true latest by numeric version
+        f = files[-1]  # true latest by numeric version
     return json.loads(f.read_text(encoding="utf-8"))
 
 
@@ -68,6 +72,7 @@ def list_versions(project_id: str, target: str) -> list[str]:
 def version_details(project_id: str, target: str) -> list[dict]:
     """Rich list for the UI picker: [{version, created, lines, model, override_of}]."""
     import datetime as _dt
+
     out = []
     for f in _sorted_versions(_versions_dir(project_id, target)):
         try:
@@ -76,12 +81,15 @@ def version_details(project_id: str, target: str) -> list[dict]:
             continue
         ts = p.get("_created")
         when = _dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "?"
-        out.append({
-            "version": f.stem, "created": when,
-            "lines": len(p.get("narration_lines", [])),
-            "model": p.get("dubbing_model", "?"),
-            "override_of": p.get("_override_of", ""),
-        })
+        out.append(
+            {
+                "version": f.stem,
+                "created": when,
+                "lines": len(p.get("narration_lines", [])),
+                "model": p.get("dubbing_model", "?"),
+                "override_of": p.get("_override_of", ""),
+            }
+        )
     return out
 
 

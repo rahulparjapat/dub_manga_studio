@@ -3,6 +3,7 @@
 No external dependency is required; this keeps the app runnable in the existing
 small environment while exposing a standard /metrics text endpoint.
 """
+
 from __future__ import annotations
 
 import time
@@ -14,7 +15,9 @@ from typing import Any
 class MetricsRegistry:
     def __init__(self) -> None:
         self._counters: dict[tuple[str, tuple[tuple[str, str], ...]], float] = defaultdict(float)
-        self._histograms: dict[tuple[str, tuple[tuple[str, str], ...]], list[float]] = defaultdict(list)
+        self._histograms: dict[tuple[str, tuple[tuple[str, str], ...]], list[float]] = defaultdict(
+            list
+        )
         self._gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
         self._lock = Lock()
         self.started_at = time.time()
@@ -32,7 +35,11 @@ class MetricsRegistry:
             self._gauges[(name, _labels(labels))] = value
 
     def render_prometheus(self) -> str:
-        lines = ["# HELP cms_info Chatterbox Manga Studio application info", "# TYPE cms_info gauge", 'cms_info{version="1.0.0"} 1']
+        lines = [
+            "# HELP cms_info Chatterbox Manga Studio application info",
+            "# TYPE cms_info gauge",
+            'cms_info{version="1.0.0"} 1',
+        ]
         with self._lock:
             for (name, labels), value in sorted(self._counters.items()):
                 lines.append(f"# TYPE {name} counter")

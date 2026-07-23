@@ -1,4 +1,5 @@
 """FastAPI dependencies for Phase 4 API services."""
+
 from __future__ import annotations
 
 from fastapi import Request

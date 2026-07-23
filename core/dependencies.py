@@ -1,17 +1,19 @@
 """FastAPI dependency injection for core services."""
+
 from __future__ import annotations
-from functools import lru_cache
+
 from typing import Any
 
 from fastapi import Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
-from .config import Settings, load_config, active_profile
+from .config import Settings, active_profile, load_config
 from .paths import PROJECT_ROOT, ensure_dirs
 
 
 class APIKeyAuth(BaseModel):
     """API key authentication."""
+
     api_key: str
     user_id: str | None = None
     permissions: list[str] = []
@@ -49,8 +51,7 @@ def get_project_root() -> str:
 def get_model_manager() -> Any:
     if _model_manager is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ModelManager not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ModelManager not initialized"
         )
     return _model_manager
 
@@ -58,8 +59,7 @@ def get_model_manager() -> Any:
 def get_storage_manager() -> Any:
     if _storage_manager is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="StorageManager not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="StorageManager not initialized"
         )
     return _storage_manager
 
@@ -67,8 +67,7 @@ def get_storage_manager() -> Any:
 def get_job_scheduler() -> Any:
     if _job_scheduler is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="JobScheduler not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="JobScheduler not initialized"
         )
     return _job_scheduler
 
@@ -76,8 +75,7 @@ def get_job_scheduler() -> Any:
 def get_workflow_engine() -> Any:
     if _workflow_engine is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="WorkflowEngine not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="WorkflowEngine not initialized"
         )
     return _workflow_engine
 
@@ -86,7 +84,7 @@ def get_provider_manager() -> Any:
     if _provider_manager is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ProviderManager not initialized"
+            detail="ProviderManager not initialized",
         )
     return _provider_manager
 
@@ -94,8 +92,7 @@ def get_provider_manager() -> Any:
 def get_voice_service() -> Any:
     if _voice_service is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="VoiceService not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="VoiceService not initialized"
         )
     return _voice_service
 
@@ -104,7 +101,7 @@ def get_transcription_service() -> Any:
     if _transcription_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="TranscriptionService not initialized"
+            detail="TranscriptionService not initialized",
         )
     return _transcription_service
 
@@ -112,8 +109,7 @@ def get_transcription_service() -> Any:
 def get_dubbing_service() -> Any:
     if _dubbing_service is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DubbingService not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="DubbingService not initialized"
         )
     return _dubbing_service
 
@@ -121,8 +117,7 @@ def get_dubbing_service() -> Any:
 def get_export_service() -> Any:
     if _export_service is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ExportService not initialized"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ExportService not initialized"
         )
     return _export_service
 
@@ -175,7 +170,7 @@ def set_export_service(svc: Any) -> None:
 
 async def get_api_key(
     x_api_key: str | None = Header(None, alias="X-API-Key"),
-    authorization: str | None = Header(None)
+    authorization: str | None = Header(None),
 ) -> str:
     """Extract API key from header or Authorization bearer token."""
     if x_api_key:
@@ -197,7 +192,9 @@ def get_current_user(api_key: str = Depends(get_api_key)) -> str:
 
 def require_permissions(*required: str):
     """Dependency factory for permission checking."""
+
     async def check_permissions(user_id: str = Depends(get_current_user)) -> str:
         # In production, check user permissions from database
         return user_id
+
     return check_permissions

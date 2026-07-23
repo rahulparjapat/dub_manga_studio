@@ -4,6 +4,7 @@ This backend is intentionally simple and dependency-free, but it preserves the
 same contracts expected from Redis/Postgres/S3 implementations: object storage,
 JSON key-value records, priority queues, and cooperative locks.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,7 +28,6 @@ from .interfaces import (
     QueueStorageInterface,
 )
 from .models import NotFoundError, PermissionError, QueueMessage, StorageBackend, StorageMetadata
-
 
 JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
 
@@ -110,7 +110,9 @@ class FilesystemObjectStore(ObjectStorageInterface):
             meta = StorageMetadata(
                 key=key,
                 size_bytes=len(blob),
-                content_type=content_type or mimetypes.guess_type(key)[0] or "application/octet-stream",
+                content_type=content_type
+                or mimetypes.guess_type(key)[0]
+                or "application/octet-stream",
                 created_at=now,
                 modified_at=now,
                 etag=etag,
@@ -201,7 +203,11 @@ class FilesystemObjectStore(ObjectStorageInterface):
         def collect_keys() -> list[str]:
             keys: list[str] = []
             for path in sorted(self.root.rglob("*")):
-                if path.is_file() and not path.name.endswith(".cmsmeta.json") and not path.name.startswith(".health-"):
+                if (
+                    path.is_file()
+                    and not path.name.endswith(".cmsmeta.json")
+                    and not path.name.startswith(".health-")
+                ):
                     rel = str(path.relative_to(self.root))
                     if rel.startswith(prefix):
                         keys.append(rel)
@@ -230,7 +236,9 @@ class FilesystemObjectStore(ObjectStorageInterface):
         await self.delete(src_key)
         return meta
 
-    async def get_presigned_url(self, key: str, expiration: int = 3_600, method: str = "GET") -> str:
+    async def get_presigned_url(
+        self, key: str, expiration: int = 3_600, method: str = "GET"
+    ) -> str:
         del expiration, method
         path = self._resolve_path(key)
         if not path.exists():
@@ -279,10 +287,21 @@ class FilesystemKVStore(KeyValueStorageInterface):
         """Write a key while the caller owns ``self._lock``."""
 
         expires_at = (_utc_now() + timedelta(seconds=ttl)).isoformat() if ttl else None
-        record = {"key": key, "value": value, "created_at": _utc_now().isoformat(), "expires_at": expires_at}
+        record = {
+            "key": key,
+            "value": value,
+            "created_at": _utc_now().isoformat(),
+            "expires_at": expires_at,
+        }
         path = self._key_path(key)
         tmp = path.with_suffix(f".{uuid4().hex}.tmp")
-        text = json.dumps(record, default=_json_default, **JSON_KWARGS)
+        text = json.dumps(
+            record,
+            default=_json_default,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         await asyncio.to_thread(tmp.write_text, text, encoding="utf-8")
         await asyncio.to_thread(os.replace, tmp, path)
 
@@ -400,7 +419,9 @@ class FilesystemQueue(QueueStorageInterface):
         messages: list[QueueMessage] = []
         for path in sorted((self.root / bucket).glob("*.json")):
             try:
-                msg = QueueMessage.model_validate_json(await asyncio.to_thread(path.read_text, encoding="utf-8"))
+                msg = QueueMessage.model_validate_json(
+                    await asyncio.to_thread(path.read_text, encoding="utf-8")
+                )
                 if msg.queue == queue:
                     messages.append(msg)
             except Exception:
@@ -417,7 +438,9 @@ class FilesystemQueue(QueueStorageInterface):
                 if src.exists():
                     message.attempts += 1
                     message.visible_at = _utc_now()
-                    await asyncio.to_thread(dst.write_text, message.model_dump_json(), encoding="utf-8")
+                    await asyncio.to_thread(
+                        dst.write_text, message.model_dump_json(), encoding="utf-8"
+                    )
                     await asyncio.to_thread(src.unlink, missing_ok=True)
                     results.append((message.id, message.payload))
             return results

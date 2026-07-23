@@ -15,11 +15,13 @@ Design notes:
   * Default ON, with one default preset selected; a master toggle turns it off.
   * Text is Hinglish written in Devanagari (matches the hinglish_devanagari dub).
 """
+
 from __future__ import annotations
+
 import json
-from pathlib import Path
-from ..common.paths import PROJECT_ROOT
+
 from ..common.logging_util import get_logger
+from ..common.paths import PROJECT_ROOT
 
 log = get_logger("intro_outro")
 
@@ -69,7 +71,7 @@ BUILTIN_PRESETS: dict[str, dict] = {
     },
 }
 
-DEFAULT_PRESET = "Mystery / Curiosity"   # user pick (#4)
+DEFAULT_PRESET = "Mystery / Curiosity"  # user pick (#4)
 # Never silently add narration or change a project's runtime. Users opt in per dub.
 DEFAULT_ENABLED = False
 
@@ -92,11 +94,13 @@ def all_presets() -> dict[str, dict]:
     """Built-ins (with any user edits applied) + user-added customs."""
     d = _store()
     out = {k: dict(v) for k, v in BUILTIN_PRESETS.items()}
-    for name, ov in d.get("edited", {}).items():        # apply edits to built-ins
+    for name, ov in d.get("edited", {}).items():  # apply edits to built-ins
         if name in out:
-            out[name] = {"intro": ov.get("intro", out[name]["intro"]),
-                         "outro": ov.get("outro", out[name]["outro"])}
-    for name, v in d.get("custom", {}).items():          # add customs
+            out[name] = {
+                "intro": ov.get("intro", out[name]["intro"]),
+                "outro": ov.get("outro", out[name]["outro"]),
+            }
+    for name, v in d.get("custom", {}).items():  # add customs
         out[name] = {"intro": v.get("intro", ""), "outro": v.get("outro", "")}
     return out
 
@@ -129,18 +133,21 @@ def delete_preset(name: str) -> str:
     """Delete a custom preset, or revert a built-in edit back to the original."""
     d = _store()
     if name in d.get("custom", {}):
-        del d["custom"][name]; _save(d)
+        del d["custom"][name]
+        _save(d)
         return f"Deleted custom preset '{name}'."
     if name in d.get("edited", {}):
-        del d["edited"][name]; _save(d)
+        del d["edited"][name]
+        _save(d)
         return f"Reverted '{name}' to the built-in default."
     if name in BUILTIN_PRESETS:
         return "Built-in presets can't be deleted (edit it or add your own instead)."
     return "No such preset."
 
 
-def apply_to_lines(lines: list[str], intro: str = "", outro: str = "",
-                   enabled: bool = True) -> list[str]:
+def apply_to_lines(
+    lines: list[str], intro: str = "", outro: str = "", enabled: bool = True
+) -> list[str]:
     """Return narration lines with intro prepended + outro appended.
 
     Uses the CURRENT edited text passed from the UI (so unsaved edits still take

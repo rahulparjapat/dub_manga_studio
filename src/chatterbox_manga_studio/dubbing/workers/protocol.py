@@ -23,10 +23,10 @@ Request for /generate (JSON):
   "cue_index": 0                          # cue index for hybrid routing
 }
 """
-from __future__ import annotations
-from dataclasses import dataclass, asdict, field
-from typing import Optional
 
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
 
 # ---- target -> (language_id) map used by workers ----
 TARGET_LANG = {
@@ -42,15 +42,15 @@ class GenRequest:
     text: str
     out_path: str
     target: str = "english"
-    language: Optional[str] = None      # None -> derived from target
-    reference_wav: Optional[str] = None
-    reference_text: Optional[str] = None
+    language: str | None = None  # None -> derived from target
+    reference_wav: str | None = None
+    reference_text: str | None = None
     preset: dict = field(default_factory=dict)
-    emotion_tags: Optional[str] = None
+    emotion_tags: str | None = None
     int4: bool = True
     quantize_4bit: bool = True
-    clone_mode: str = "hybrid"          # VoxCPM2: "hifi" | "controllable" | "hybrid"
-    cue_index: int = 0                  # cue index for hybrid routing
+    clone_mode: str = "hybrid"  # VoxCPM2: "hifi" | "controllable" | "hybrid"
+    cue_index: int = 0  # cue index for hybrid routing
 
     def __post_init__(self):
         if not self.language:
@@ -60,7 +60,7 @@ class GenRequest:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, d: dict) -> "GenRequest":
+    def from_json(cls, d: dict) -> GenRequest:
         return cls(
             text=d.get("text", ""),
             out_path=d["out_path"],

@@ -1,15 +1,17 @@
 """Plugin system for model workers."""
+
 from __future__ import annotations
+
+import importlib.metadata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Literal
-
-import importlib.metadata
 
 
 @dataclass
 class ModelCapabilities:
     """Metadata describing a model plugin's capabilities."""
+
     model_id: str
     label: str
     license: str

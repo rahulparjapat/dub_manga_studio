@@ -27,7 +27,9 @@ def test_fastapi_serves_react_spa_when_build_exists(tmp_path):
     dist = tmp_path / "dist"
     assets = dist / "assets"
     assets.mkdir(parents=True)
-    (dist / "index.html").write_text("<html><body><div id='root'>SPA</div></body></html>", encoding="utf-8")
+    (dist / "index.html").write_text(
+        "<html><body><div id='root'>SPA</div></body></html>", encoding="utf-8"
+    )
     (assets / "app.js").write_text("console.log('ok')", encoding="utf-8")
     app = create_app(data_root=tmp_path / "api", frontend_dist=dist, noop_models=True)
     with TestClient(app) as client:
@@ -39,6 +41,7 @@ def test_fastapi_serves_react_spa_when_build_exists(tmp_path):
 
 def test_end_to_end_dry_workflow_through_integrated_api(tmp_path, monkeypatch):
     import json
+
     import chatterbox_manga_studio.common.paths as P
     import chatterbox_manga_studio.services.pipeline.nodes as N
     from chatterbox_manga_studio.transcribe import whisper_engine
@@ -47,9 +50,13 @@ def test_end_to_end_dry_workflow_through_integrated_api(tmp_path, monkeypatch):
     monkeypatch.setattr(N, "project_dir", P.project_dir)
     monkeypatch.setattr(N, "edition_dir", P.edition_dir)
 
-    def fake_transcribe(video_path, out_dir, source_language="Auto", chunk_seconds=None, progress=None):
+    def fake_transcribe(
+        video_path, out_dir, source_language="Auto", chunk_seconds=None, progress=None
+    ):
         Path(out_dir).mkdir(parents=True, exist_ok=True)
-        (Path(out_dir) / "transcript.json").write_text(json.dumps([{"start": 0, "end": 1, "text": "src"}]), encoding="utf-8")
+        (Path(out_dir) / "transcript.json").write_text(
+            json.dumps([{"start": 0, "end": 1, "text": "src"}]), encoding="utf-8"
+        )
         return {"ok": True, "segments": 1}
 
     monkeypatch.setattr(whisper_engine, "transcribe", fake_transcribe)
@@ -59,9 +66,22 @@ def test_end_to_end_dry_workflow_through_integrated_api(tmp_path, monkeypatch):
     with TestClient(app) as client:
         project = client.post("/api/v1/projects", json={"project_id": "e2e", "title": "E2E"})
         assert project.status_code == 201
-        job = client.post("/api/v1/jobs", json={"type": "workflow", "payload": {"project_id": "e2e"}})
+        job = client.post(
+            "/api/v1/jobs", json={"type": "workflow", "payload": {"project_id": "e2e"}}
+        )
         assert job.status_code == 201
-        run = client.post("/api/v1/pipeline/workflows/dry-run", json={"input": {"project_id": "e2e", "source_path": str(source), "target": "english", "model_id": "chatterbox", "adapted_lines": ["hello"]}})
+        run = client.post(
+            "/api/v1/pipeline/workflows/dry-run",
+            json={
+                "input": {
+                    "project_id": "e2e",
+                    "source_path": str(source),
+                    "target": "english",
+                    "model_id": "chatterbox",
+                    "adapted_lines": ["hello"],
+                }
+            },
+        )
         assert run.status_code == 201
         run_id = run.json()["id"]
         completed = client.post(f"/api/v1/pipeline/workflows/{run_id}/resume").json()

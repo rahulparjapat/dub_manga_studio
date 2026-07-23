@@ -1,4 +1,5 @@
 """Dynamic provider selection, failover, retries, cooldowns, and rate limiting."""
+
 from __future__ import annotations
 
 import asyncio
@@ -134,32 +135,61 @@ class ProviderManager:
         async with self._lock:
             self._providers[name].priority = priority
 
-    async def execute(self, request: ProviderRequest | str, payload: dict[str, Any] | None = None) -> ProviderResponse:
+    async def execute(
+        self, request: ProviderRequest | str, payload: dict[str, Any] | None = None
+    ) -> ProviderResponse:
         """Execute an operation using dynamic provider failover."""
 
-        req = request if isinstance(request, ProviderRequest) else ProviderRequest(operation=request, payload=payload or {})
+        req = (
+            request
+            if isinstance(request, ProviderRequest)
+            else ProviderRequest(operation=request, payload=payload or {})
+        )
         attempted_errors: list[str] = []
 
         while True:
             record = await self.choose_provider()
             if record is None:
-                raise RuntimeError(f"No provider available for operation {req.operation}; errors={attempted_errors}")
+                raise RuntimeError(
+                    f"No provider available for operation {req.operation}; errors={attempted_errors}"
+                )
 
             attempts_for_provider = record.retries + 1
             for attempt in range(1, attempts_for_provider + 1):
                 try:
                     await self._apply_rate_limit(record)
                     started = datetime.now(UTC)
-                    result = await asyncio.wait_for(record.provider.invoke(req), timeout=record.timeout_seconds)
-                    metrics.inc("cms_provider_requests_total", provider=record.provider.name, operation=req.operation, status="success")
-                    metrics.observe("cms_provider_request_duration_ms", (datetime.now(UTC) - started).total_seconds() * 1000, provider=record.provider.name, operation=req.operation)
+                    result = await asyncio.wait_for(
+                        record.provider.invoke(req), timeout=record.timeout_seconds
+                    )
+                    metrics.inc(
+                        "cms_provider_requests_total",
+                        provider=record.provider.name,
+                        operation=req.operation,
+                        status="success",
+                    )
+                    metrics.observe(
+                        "cms_provider_request_duration_ms",
+                        (datetime.now(UTC) - started).total_seconds() * 1000,
+                        provider=record.provider.name,
+                        operation=req.operation,
+                    )
                     await self._mark_success(record.provider.name)
-                    return ProviderResponse(provider=record.provider.name, result=result, attempts=attempt)
+                    return ProviderResponse(
+                        provider=record.provider.name, result=result, attempts=attempt
+                    )
                 except Exception as exc:  # noqa: BLE001 - provider adapters normalize later
                     attempted_errors.append(f"{record.provider.name}: {exc}")
-                    metrics.inc("cms_provider_requests_total", provider=record.provider.name, operation=req.operation, status="error")
+                    metrics.inc(
+                        "cms_provider_requests_total",
+                        provider=record.provider.name,
+                        operation=req.operation,
+                        status="error",
+                    )
                     if attempt < attempts_for_provider:
-                        await asyncio.sleep(min(record.backoff_base_seconds * (2 ** (attempt - 1)), 10.0))
+                        await asyncio.sleep(
+                            min(record.backoff_base_seconds * (2 ** (attempt - 1)), 10.0)
+                        )
                         continue
                     await self._mark_failure(record.provider.name, str(exc))
                     break
@@ -179,9 +209,15 @@ class ProviderManager:
                     continue
                 if record.status in {ProviderHealth.UNHEALTHY, ProviderHealth.COOLDOWN}:
                     # A provider exits cooldown on the next health check or after time.
-                    if record.cooldown_until and record.cooldown_until <= now and not (record.circuit_open_until and record.circuit_open_until > now):
+                    if (
+                        record.cooldown_until
+                        and record.cooldown_until <= now
+                        and not (record.circuit_open_until and record.circuit_open_until > now)
+                    ):
                         record.status = ProviderHealth.DEGRADED
-                    elif record.cooldown_until is None and not (record.circuit_open_until and record.circuit_open_until > now):
+                    elif record.cooldown_until is None and not (
+                        record.circuit_open_until and record.circuit_open_until > now
+                    ):
                         record.status = ProviderHealth.DEGRADED
                     else:
                         continue
@@ -231,11 +267,15 @@ class ProviderManager:
             record.failure_count += 1
             record.last_error = error
             now = datetime.now(UTC)
-            record.status = ProviderHealth.COOLDOWN if record.cooldown_seconds else ProviderHealth.UNHEALTHY
+            record.status = (
+                ProviderHealth.COOLDOWN if record.cooldown_seconds else ProviderHealth.UNHEALTHY
+            )
             record.cooldown_until = now + timedelta(seconds=record.cooldown_seconds)
             if record.failure_count >= record.circuit_failure_threshold:
                 record.status = ProviderHealth.UNHEALTHY
-                record.circuit_open_until = now + timedelta(seconds=max(record.cooldown_seconds * 2, 60))
+                record.circuit_open_until = now + timedelta(
+                    seconds=max(record.cooldown_seconds * 2, 60)
+                )
         await self.event_bus.publish(
             EventType.PROVIDER_HEALTH_CHANGED,
             source="ProviderManager",
@@ -254,7 +294,9 @@ class ProviderManager:
                     record.request_times.append(now)
                     return
                 oldest = min(record.request_times)
-                wait_seconds = max(0.0, record.rate_limit.window_seconds - (now - oldest).total_seconds())
+                wait_seconds = max(
+                    0.0, record.rate_limit.window_seconds - (now - oldest).total_seconds()
+                )
             await self.event_bus.publish(
                 EventType.PROVIDER_RATE_LIMITED,
                 source="ProviderManager",
@@ -280,8 +322,12 @@ class ProviderManager:
                     "status": record.status,
                     "failure_count": record.failure_count,
                     "success_count": record.success_count,
-                    "cooldown_until": record.cooldown_until.isoformat() if record.cooldown_until else None,
-                    "circuit_open_until": record.circuit_open_until.isoformat() if record.circuit_open_until else None,
+                    "cooldown_until": (
+                        record.cooldown_until.isoformat() if record.cooldown_until else None
+                    ),
+                    "circuit_open_until": (
+                        record.circuit_open_until.isoformat() if record.circuit_open_until else None
+                    ),
                     "timeout_seconds": record.timeout_seconds,
                     "last_error": record.last_error,
                 }

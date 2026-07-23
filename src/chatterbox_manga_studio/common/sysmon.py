@@ -5,8 +5,9 @@ torch), and CPU%/RAM via /proc (no psutil dependency). Everything is best-effort
 if a source is unavailable the field is None and the widget just hides that metric.
 Designed to be cheap enough to poll once per second.
 """
+
 from __future__ import annotations
-import os
+
 import shutil
 import subprocess
 import time
@@ -18,26 +19,34 @@ def _read_gpu() -> dict:
     """VRAM used/total (MB) + GPU util% via nvidia-smi. None if no GPU."""
     exe = shutil.which("nvidia-smi")
     if not exe:
-        return {"vram_used_mb": None, "vram_total_mb": None, "gpu_util": None,
-                "gpu_name": None}
+        return {"vram_used_mb": None, "vram_total_mb": None, "gpu_util": None, "gpu_name": None}
     try:
         out = subprocess.check_output(
-            [exe, "--query-gpu=memory.used,memory.total,utilization.gpu,name",
-             "--format=csv,noheader,nounits"],
-            text=True, stderr=subprocess.DEVNULL, timeout=3)
+            [
+                exe,
+                "--query-gpu=memory.used,memory.total,utilization.gpu,name",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        )
         line = out.strip().splitlines()[0]
         used, total, util, name = [x.strip() for x in line.split(",")]
-        return {"vram_used_mb": float(used), "vram_total_mb": float(total),
-                "gpu_util": float(util), "gpu_name": name}
+        return {
+            "vram_used_mb": float(used),
+            "vram_total_mb": float(total),
+            "gpu_util": float(util),
+            "gpu_name": name,
+        }
     except Exception:
-        return {"vram_used_mb": None, "vram_total_mb": None, "gpu_util": None,
-                "gpu_name": None}
+        return {"vram_used_mb": None, "vram_total_mb": None, "gpu_util": None, "gpu_name": None}
 
 
 def _read_cpu_percent() -> float | None:
     """Instantaneous CPU% from two /proc/stat samples (delta since last call)."""
     try:
-        with open("/proc/stat", "r") as f:
+        with open("/proc/stat") as f:
             parts = f.readline().split()
         vals = list(map(float, parts[1:]))
         idle = vals[3] + (vals[4] if len(vals) > 4 else 0.0)  # idle + iowait
@@ -56,7 +65,7 @@ def _read_ram() -> dict:
     """RAM used/total (MB) from /proc/meminfo."""
     try:
         info = {}
-        with open("/proc/meminfo", "r") as f:
+        with open("/proc/meminfo") as f:
             for ln in f:
                 k, _, v = ln.partition(":")
                 info[k.strip()] = float(v.strip().split()[0])  # kB
@@ -121,13 +130,13 @@ def html_widget() -> str:
 
     return (
         f'<div style="font-family:ui-monospace,Menlo,monospace;'
-        f'background:#0e1116;border:1px solid #263041;border-radius:8px;'
+        f"background:#0e1116;border:1px solid #263041;border-radius:8px;"
         f'padding:6px 8px;min-width:210px;max-width:230px;">'
         f'<div style="color:#6cf;font-size:9px;margin-bottom:2px;'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-        f'📊 {gpu_name}</div>'
+        f"📊 {gpu_name}</div>"
         f'{row("VRAM", vram_pct, vram_detail, "#3fb950")}'
         f'{row("CPU", cpu_pct, cpu_detail, "#58a6ff")}'
         f'{row("RAM", ram_pct, ram_detail, "#d29922")}'
-        f'</div>'
+        f"</div>"
     )

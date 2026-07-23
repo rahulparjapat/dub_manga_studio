@@ -3,14 +3,17 @@
 Gradio handles the actual browser chunking + %/cancel in the UI layer; this module
 does the server-side receive, partial cleanup, listing, and Drive download.
 """
+
 from __future__ import annotations
+
 import json
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from ..common.paths import INPUT, UPLOADS, project_dir
+
 from ..common.logging_util import get_logger
+from ..common.paths import INPUT, UPLOADS, project_dir
 
 log = get_logger("ingest")
 
@@ -19,8 +22,7 @@ VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".ts", ".m4v"}
 
 def list_input_videos() -> list[str]:
     INPUT.mkdir(parents=True, exist_ok=True)
-    return sorted(str(p) for p in INPUT.iterdir()
-                  if p.suffix.lower() in VIDEO_EXTS)
+    return sorted(str(p) for p in INPUT.iterdir() if p.suffix.lower() in VIDEO_EXTS)
 
 
 def check_input_video_ready(path: str | Path, min_stable_seconds: float = 6.0) -> dict:
@@ -36,20 +38,45 @@ def check_input_video_ready(path: str | Path, min_stable_seconds: float = 6.0) -
     stat = p.stat()
     age = time.time() - stat.st_mtime
     if stat.st_size < 1024 or age < min_stable_seconds:
-        return {"ok": False, "waiting": True,
-                "message": f"Still uploading/copying ({max(0, min_stable_seconds - age):.0f}s stability wait)."}
+        return {
+            "ok": False,
+            "waiting": True,
+            "message": f"Still uploading/copying ({max(0, min_stable_seconds - age):.0f}s stability wait).",
+        }
     try:
         proc = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-show_streams", "-of", "json", str(p)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=45)
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-show_streams",
+                "-of",
+                "json",
+                str(p),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
     except FileNotFoundError:
-        return {"ok": False, "message": "ffprobe is required to verify uploaded video; install ffmpeg."}
+        return {
+            "ok": False,
+            "message": "ffprobe is required to verify uploaded video; install ffmpeg.",
+        }
     except subprocess.TimeoutExpired:
-        return {"ok": False, "waiting": True, "message": "Video probe timed out; file may still be copying."}
+        return {
+            "ok": False,
+            "waiting": True,
+            "message": "Video probe timed out; file may still be copying.",
+        }
     if proc.returncode != 0:
-        return {"ok": False, "waiting": True,
-                "message": "Video is not readable yet; waiting for upload/copy to finish."}
+        return {
+            "ok": False,
+            "waiting": True,
+            "message": "Video is not readable yet; waiting for upload/copy to finish.",
+        }
     try:
         data = json.loads(proc.stdout or "{}")
         duration = float((data.get("format") or {}).get("duration") or 0)
@@ -58,8 +85,12 @@ def check_input_video_ready(path: str | Path, min_stable_seconds: float = 6.0) -
         return {"ok": False, "waiting": True, "message": "Video metadata is incomplete; waiting."}
     if duration <= 0 or "video" not in kinds or "audio" not in kinds:
         return {"ok": False, "message": "Video must contain readable video and audio streams."}
-    return {"ok": True, "path": str(p), "duration_s": duration,
-            "message": f"Ready: {p.name} ({duration / 60:.1f} min, {stat.st_size / 2**30:.2f} GB)."}
+    return {
+        "ok": True,
+        "path": str(p),
+        "duration_s": duration,
+        "message": f"Ready: {p.name} ({duration / 60:.1f} min, {stat.st_size / 2**30:.2f} GB).",
+    }
 
 
 def store_uploaded(tmp_path: str, project_id: str, filename: str) -> str:
@@ -80,12 +111,17 @@ def auto_ingest_stable_input(project_id: str, min_stable_seconds: float = 6.0) -
     untouched, making the UI timer idempotent.
     """
     INPUT.mkdir(parents=True, exist_ok=True)
-    candidates = sorted((p for p in INPUT.iterdir()
-                         if p.is_file() and p.suffix.lower() in VIDEO_EXTS),
-                        key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
+    candidates = sorted(
+        (p for p in INPUT.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS),
+        key=lambda p: (p.stat().st_mtime, p.name),
+        reverse=True,
+    )
     if not candidates:
-        return {"ok": False, "waiting": True,
-                "message": "Waiting for a completed video in data/input/."}
+        return {
+            "ok": False,
+            "waiting": True,
+            "message": "Waiting for a completed video in data/input/.",
+        }
     ready = None
     last_note = "Waiting for a completed video in data/input/."
     for candidate in candidates:
@@ -101,8 +137,12 @@ def auto_ingest_stable_input(project_id: str, min_stable_seconds: float = 6.0) -
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / src.name
     if dst.exists() and dst.stat().st_size == src.stat().st_size:
-        return {"ok": True, "already": True, "path": str(dst),
-                "message": f"Already ingested: {src.name}"}
+        return {
+            "ok": True,
+            "already": True,
+            "path": str(dst),
+            "message": f"Already ingested: {src.name}",
+        }
     tmp = dst.with_name(f".{dst.name}.copying")
     try:
         shutil.copy2(src, tmp)
@@ -110,8 +150,11 @@ def auto_ingest_stable_input(project_id: str, min_stable_seconds: float = 6.0) -
             raise OSError("copied size did not match source")
         tmp.replace(dst)
         log.info("auto-ingested stable input %s -> %s", src, dst)
-        return {"ok": True, "path": str(dst),
-                "message": f"Auto-ingested completed input: {src.name}"}
+        return {
+            "ok": True,
+            "path": str(dst),
+            "message": f"Auto-ingested completed input: {src.name}",
+        }
     except Exception as e:
         tmp.unlink(missing_ok=True)
         return {"ok": False, "message": f"Auto-ingest failed: {e}"}
@@ -122,7 +165,8 @@ def cleanup_partial(project_id: str) -> int:
     n = 0
     for p in UPLOADS.glob(f"{project_id}.*"):
         try:
-            p.unlink(); n += 1
+            p.unlink()
+            n += 1
         except Exception:
             pass
     return n

@@ -1,4 +1,5 @@
 """Base classes and helpers for workflow pipeline nodes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -75,8 +76,14 @@ class PipelineNode:
         try:
             result = await self.run(ctx)
             await ctx.raise_if_cancelled()
-            payload = result.model_dump(mode="json") if isinstance(result, NodeExecutionResult) else result
-            await self.checkpoint(ctx, {"status": "completed", "completed": True, "result": payload})
+            payload = (
+                result.model_dump(mode="json")
+                if isinstance(result, NodeExecutionResult)
+                else result
+            )
+            await self.checkpoint(
+                ctx, {"status": "completed", "completed": True, "result": payload}
+            )
             await ctx.update_progress(1.0, "completed")
             return payload
         except asyncio.CancelledError:

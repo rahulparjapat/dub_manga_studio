@@ -1,4 +1,5 @@
 """Worker discovery, capability matching, load balancing, and reservations."""
+
 from __future__ import annotations
 
 import asyncio
@@ -78,7 +79,9 @@ class WorkerPool:
         self._health_checks: dict[str, HealthCheck] = {}
         self._lock = asyncio.Lock()
 
-    async def register_worker(self, descriptor: WorkerDescriptor, *, health_check: HealthCheck | None = None) -> WorkerDescriptor:
+    async def register_worker(
+        self, descriptor: WorkerDescriptor, *, health_check: HealthCheck | None = None
+    ) -> WorkerDescriptor:
         async with self._lock:
             descriptor.status = WorkerStatus.HEALTHY
             descriptor.last_heartbeat_at = datetime.now(UTC)
@@ -88,7 +91,10 @@ class WorkerPool:
         await self.event_bus.publish(
             EventType.WORKER_REGISTERED,
             source="WorkerPool",
-            payload={"worker_id": descriptor.worker_id, "model_id": descriptor.capabilities.model_id},
+            payload={
+                "worker_id": descriptor.worker_id,
+                "model_id": descriptor.capabilities.model_id,
+            },
             correlation_id=descriptor.worker_id,
         )
         return descriptor
@@ -108,7 +114,9 @@ class WorkerPool:
                 correlation_id=worker_id,
             )
 
-    async def heartbeat(self, worker_id: str, payload: dict[str, Any] | None = None) -> WorkerDescriptor:
+    async def heartbeat(
+        self, worker_id: str, payload: dict[str, Any] | None = None
+    ) -> WorkerDescriptor:
         async with self._lock:
             descriptor = self._workers[worker_id]
             descriptor.last_heartbeat_at = datetime.now(UTC)
@@ -123,8 +131,16 @@ class WorkerPool:
 
     async def match_workers(self, criteria: WorkerMatchCriteria) -> list[WorkerDescriptor]:
         async with self._lock:
-            matches = [worker for worker in self._workers.values() if self._matches(worker, criteria)]
-        matches.sort(key=lambda worker: (worker.active_reservations / max(1, worker.max_reservations), worker.active_reservations, worker.worker_id))
+            matches = [
+                worker for worker in self._workers.values() if self._matches(worker, criteria)
+            ]
+        matches.sort(
+            key=lambda worker: (
+                worker.active_reservations / max(1, worker.max_reservations),
+                worker.active_reservations,
+                worker.worker_id,
+            )
+        )
         return matches
 
     async def reserve_worker(
@@ -136,18 +152,36 @@ class WorkerPool:
     ) -> WorkerReservation:
         async with self._lock:
             self._expire_reservations_locked()
-            candidates = [worker for worker in self._workers.values() if self._matches(worker, criteria)]
-            candidates = [worker for worker in candidates if worker.active_reservations < worker.max_reservations]
-            candidates.sort(key=lambda worker: (worker.active_reservations / max(1, worker.max_reservations), worker.active_reservations, worker.worker_id))
+            candidates = [
+                worker for worker in self._workers.values() if self._matches(worker, criteria)
+            ]
+            candidates = [
+                worker
+                for worker in candidates
+                if worker.active_reservations < worker.max_reservations
+            ]
+            candidates.sort(
+                key=lambda worker: (
+                    worker.active_reservations / max(1, worker.max_reservations),
+                    worker.active_reservations,
+                    worker.worker_id,
+                )
+            )
             if not candidates:
                 raise RuntimeError("No worker available for requested capabilities")
             worker = candidates[0]
             worker.active_reservations += 1
-            worker.status = WorkerStatus.RESERVED if worker.active_reservations >= worker.max_reservations else WorkerStatus.HEALTHY
+            worker.status = (
+                WorkerStatus.RESERVED
+                if worker.active_reservations >= worker.max_reservations
+                else WorkerStatus.HEALTHY
+            )
             reservation = WorkerReservation(
                 worker_id=worker.worker_id,
                 model_id=worker.capabilities.model_id,
-                expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds) if ttl_seconds else None,
+                expires_at=(
+                    datetime.now(UTC) + timedelta(seconds=ttl_seconds) if ttl_seconds else None
+                ),
                 metadata=metadata or {},
             )
             self._reservations[reservation.reservation_id] = reservation
@@ -161,10 +195,16 @@ class WorkerPool:
             worker = self._workers.get(reservation.worker_id)
             if worker is not None:
                 worker.active_reservations = max(0, worker.active_reservations - 1)
-                worker.status = WorkerStatus.HEALTHY if worker.active_reservations == 0 else WorkerStatus.RESERVED
+                worker.status = (
+                    WorkerStatus.HEALTHY
+                    if worker.active_reservations == 0
+                    else WorkerStatus.RESERVED
+                )
             return True
 
-    async def health_monitor_once(self, *, stale_after_seconds: float = 60) -> dict[str, WorkerStatus]:
+    async def health_monitor_once(
+        self, *, stale_after_seconds: float = 60
+    ) -> dict[str, WorkerStatus]:
         """Run one health-monitoring pass."""
 
         now = datetime.now(UTC)
@@ -173,13 +213,20 @@ class WorkerPool:
             workers = list(self._workers.values())
         for worker in workers:
             status = WorkerStatus.HEALTHY
-            if worker.last_heartbeat_at and (now - worker.last_heartbeat_at).total_seconds() > stale_after_seconds:
+            if (
+                worker.last_heartbeat_at
+                and (now - worker.last_heartbeat_at).total_seconds() > stale_after_seconds
+            ):
                 status = WorkerStatus.DEGRADED
             check = self._health_checks.get(worker.worker_id)
             if check is not None:
                 try:
                     ok_or_awaitable = check(worker)
-                    ok = await ok_or_awaitable if hasattr(ok_or_awaitable, "__await__") else bool(ok_or_awaitable)
+                    ok = (
+                        await ok_or_awaitable
+                        if hasattr(ok_or_awaitable, "__await__")
+                        else bool(ok_or_awaitable)
+                    )
                     if not ok:
                         status = WorkerStatus.UNHEALTHY
                 except Exception:
@@ -205,28 +252,55 @@ class WorkerPool:
                 worker = self._workers.get(reservation.worker_id)
                 if worker is not None:
                     worker.active_reservations = max(0, worker.active_reservations - 1)
-                    worker.status = WorkerStatus.HEALTHY if worker.active_reservations == 0 else WorkerStatus.RESERVED
+                    worker.status = (
+                        WorkerStatus.HEALTHY
+                        if worker.active_reservations == 0
+                        else WorkerStatus.RESERVED
+                    )
 
     @staticmethod
     def _matches(worker: WorkerDescriptor, criteria: WorkerMatchCriteria) -> bool:
         cap = worker.capabilities
-        if worker.status in {WorkerStatus.UNHEALTHY, WorkerStatus.DISCONNECTED, WorkerStatus.DRAINING}:
+        if worker.status in {
+            WorkerStatus.UNHEALTHY,
+            WorkerStatus.DISCONNECTED,
+            WorkerStatus.DRAINING,
+        }:
             return False
         if criteria.model_id is not None and cap.model_id != criteria.model_id:
             return False
         if criteria.language:
             language = criteria.language.lower()
-            if cap.supported_languages and "*" not in cap.supported_languages and language not in cap.supported_languages:
+            if (
+                cap.supported_languages
+                and "*" not in cap.supported_languages
+                and language not in cap.supported_languages
+            ):
                 return False
-        if criteria.supports_voice_clone is not None and cap.supports_voice_clone != criteria.supports_voice_clone:
+        if (
+            criteria.supports_voice_clone is not None
+            and cap.supports_voice_clone != criteria.supports_voice_clone
+        ):
             return False
-        if criteria.supports_reference_audio is not None and cap.supports_reference_audio != criteria.supports_reference_audio:
+        if (
+            criteria.supports_reference_audio is not None
+            and cap.supports_reference_audio != criteria.supports_reference_audio
+        ):
             return False
-        if criteria.supports_reference_text is not None and cap.supports_reference_text != criteria.supports_reference_text:
+        if (
+            criteria.supports_reference_text is not None
+            and cap.supports_reference_text != criteria.supports_reference_text
+        ):
             return False
-        if criteria.supports_streaming is not None and cap.supports_streaming != criteria.supports_streaming:
+        if (
+            criteria.supports_streaming is not None
+            and cap.supports_streaming != criteria.supports_streaming
+        ):
             return False
-        if criteria.supports_emotions is not None and cap.supports_emotions != criteria.supports_emotions:
+        if (
+            criteria.supports_emotions is not None
+            and cap.supports_emotions != criteria.supports_emotions
+        ):
             return False
         if criteria.max_vram is not None and cap.estimated_vram > criteria.max_vram:
             return False
@@ -235,6 +309,12 @@ class WorkerPool:
     async def snapshot(self) -> dict[str, Any]:
         async with self._lock:
             return {
-                "workers": {worker_id: descriptor.model_dump(mode="json") for worker_id, descriptor in self._workers.items()},
-                "reservations": {reservation_id: reservation.model_dump(mode="json") for reservation_id, reservation in self._reservations.items()},
+                "workers": {
+                    worker_id: descriptor.model_dump(mode="json")
+                    for worker_id, descriptor in self._workers.items()
+                },
+                "reservations": {
+                    reservation_id: reservation.model_dump(mode="json")
+                    for reservation_id, reservation in self._reservations.items()
+                },
             }

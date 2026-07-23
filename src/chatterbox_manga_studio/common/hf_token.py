@@ -8,10 +8,13 @@ You can set it once via the Settings tab (Tab 6) or by creating hf_token.txt.
 It is used only to download gated models (IndicF5, Fish S2 Pro) and is never
 written into exports, scripts, manifests, or quality reports.
 """
+
 from __future__ import annotations
+
 import os
-from .paths import HF_TOKEN_FILE
+
 from .logging_util import get_logger
+from .paths import HF_TOKEN_FILE
 
 log = get_logger("hf_token")
 

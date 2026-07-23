@@ -1,10 +1,18 @@
 """Workflow definitions and registration helpers for the dubbing pipeline."""
+
 from __future__ import annotations
 
 from collections import deque
-from typing import Iterable
+from collections.abc import Iterable
 
-from ..workflow_engine import NodeStatus, WorkflowDefinition, WorkflowEngine, WorkflowNode, WorkflowRun, WorkflowStatus
+from ..workflow_engine import (
+    NodeStatus,
+    WorkflowDefinition,
+    WorkflowEngine,
+    WorkflowNode,
+    WorkflowRun,
+    WorkflowStatus,
+)
 from .base import PipelineServices
 from .nodes import (
     AudioCleanupNode,
@@ -12,12 +20,11 @@ from .nodes import (
     IngestNode,
     QualityNode,
     RenderNode,
-    TTSNode,
     TranscribeNode,
     TranslationNode,
+    TTSNode,
     VoiceSelectionNode,
 )
-
 
 DEFAULT_NODE_ORDER = [
     "ingest",
@@ -32,7 +39,9 @@ DEFAULT_NODE_ORDER = [
 ]
 
 
-def build_default_pipeline_definition(*, name: str = "Chatterbox Manga Studio Pipeline", max_concurrency: int = 1) -> WorkflowDefinition:
+def build_default_pipeline_definition(
+    *, name: str = "Chatterbox Manga Studio Pipeline", max_concurrency: int = 1
+) -> WorkflowDefinition:
     """Build the approved Phase-3 pipeline DAG.
 
     The DAG is linear at first because existing business logic is sequential.
@@ -45,13 +54,20 @@ def build_default_pipeline_definition(*, name: str = "Chatterbox Manga Studio Pi
         WorkflowNode(id="transcribe", handler="pipeline.transcribe", dependencies=["ingest"]),
         WorkflowNode(id="translation", handler="pipeline.translation", dependencies=["transcribe"]),
         WorkflowNode(id="quality", handler="pipeline.quality", dependencies=["translation"]),
-        WorkflowNode(id="voice_selection", handler="pipeline.voice_selection", dependencies=["quality"]),
+        WorkflowNode(
+            id="voice_selection", handler="pipeline.voice_selection", dependencies=["quality"]
+        ),
         WorkflowNode(id="tts", handler="pipeline.tts", dependencies=["voice_selection"]),
         WorkflowNode(id="audio_cleanup", handler="pipeline.audio_cleanup", dependencies=["tts"]),
         WorkflowNode(id="render", handler="pipeline.render", dependencies=["audio_cleanup"]),
         WorkflowNode(id="export", handler="pipeline.export", dependencies=["render"]),
     ]
-    return WorkflowDefinition(name=name, nodes=nodes, max_concurrency=max_concurrency, metadata={"phase": 3, "node_order": DEFAULT_NODE_ORDER})
+    return WorkflowDefinition(
+        name=name,
+        nodes=nodes,
+        max_concurrency=max_concurrency,
+        metadata={"phase": 3, "node_order": DEFAULT_NODE_ORDER},
+    )
 
 
 class PipelineWorkflowFactory:
@@ -77,11 +93,15 @@ class PipelineWorkflowFactory:
         for name, node in self.nodes.items():
             engine.register_handler(name, node)
 
-    def definition(self, *, name: str = "Chatterbox Manga Studio Pipeline", max_concurrency: int = 1) -> WorkflowDefinition:
+    def definition(
+        self, *, name: str = "Chatterbox Manga Studio Pipeline", max_concurrency: int = 1
+    ) -> WorkflowDefinition:
         return build_default_pipeline_definition(name=name, max_concurrency=max_concurrency)
 
 
-async def reset_pipeline_nodes(engine: WorkflowEngine, run_id: str, node_ids: Iterable[str], *, include_dependents: bool = True) -> WorkflowRun:
+async def reset_pipeline_nodes(
+    engine: WorkflowEngine, run_id: str, node_ids: Iterable[str], *, include_dependents: bool = True
+) -> WorkflowRun:
     """Reset selected nodes for partial reruns.
 
     This is intentionally outside WorkflowEngine to keep that engine generic.
@@ -101,7 +121,8 @@ async def reset_pipeline_nodes(engine: WorkflowEngine, run_id: str, node_ids: It
             current = queue.popleft()
             for child in children.get(current, []):
                 if child not in reset_ids:
-                    reset_ids.add(child); queue.append(child)
+                    reset_ids.add(child)
+                    queue.append(child)
     for node_id in reset_ids:
         if node_id in run.node_states:
             state = run.node_states[node_id]

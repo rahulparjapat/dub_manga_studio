@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Health check for Chatterbox Manga Studio services."""
 
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.config import load_config
-from core.paths import ensure_dirs
+from core.config import load_config  # noqa: E402
+from core.paths import ensure_dirs  # noqa: E402
 
 
 def check_python() -> bool:
@@ -44,7 +44,7 @@ def check_gpu() -> bool:
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
         if result.returncode == 0:
             gpu_name = result.stdout.strip()

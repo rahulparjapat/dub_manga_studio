@@ -15,6 +15,7 @@ Phase 2 adds production worker infrastructure without changing model logic:
 
 Run a worker:  python -m worker_xxx --port 8101
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,8 +25,8 @@ import sys
 import threading
 import time
 import traceback
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from uuid import uuid4
@@ -35,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from protocol import GenRequest  # noqa: E402
 
 
-class WorkerLifecycle(str, Enum):
+class WorkerLifecycle(StrEnum):
     """Lifecycle states exposed by every local model worker."""
 
     STARTING = "starting"
@@ -62,7 +63,9 @@ class BaseWorker:
     model_id = "base"
 
     def __init__(self, *, max_concurrency: int | None = None, worker_id: str | None = None):
-        self.worker_id = worker_id or os.environ.get("CMS_WORKER_ID") or f"{self.model_id}-{uuid4().hex[:8]}"
+        self.worker_id = (
+            worker_id or os.environ.get("CMS_WORKER_ID") or f"{self.model_id}-{uuid4().hex[:8]}"
+        )
         self._loaded = False
         self._model = None
         self._state = WorkerLifecycle.STARTING
@@ -71,7 +74,9 @@ class BaseWorker:
         self._registered_at: float | None = None
         self._registration: dict[str, Any] = {}
         self._shutdown_reason: str | None = None
-        self._max_concurrency = max(1, int(max_concurrency or os.environ.get("CMS_WORKER_MAX_CONCURRENCY", "1")))
+        self._max_concurrency = max(
+            1, int(max_concurrency or os.environ.get("CMS_WORKER_MAX_CONCURRENCY", "1"))
+        )
         self._semaphore = threading.BoundedSemaphore(self._max_concurrency)
         self._active_requests = 0
         self._lock = threading.RLock()
@@ -134,7 +139,9 @@ class BaseWorker:
     def request_shutdown(self, reason: str = "requested") -> None:
         with self._lock:
             self._shutdown_reason = reason
-            self._state = WorkerLifecycle.DRAINING if self._active_requests else WorkerLifecycle.STOPPING
+            self._state = (
+                WorkerLifecycle.DRAINING if self._active_requests else WorkerLifecycle.STOPPING
+            )
 
     def registration_payload(self) -> dict[str, Any]:
         return {
@@ -149,7 +156,12 @@ class BaseWorker:
 
     def health_payload(self) -> dict[str, Any]:
         with self._lock:
-            accepting = self._state not in {WorkerLifecycle.DRAINING, WorkerLifecycle.STOPPING, WorkerLifecycle.STOPPED, WorkerLifecycle.FAILED}
+            accepting = self._state not in {
+                WorkerLifecycle.DRAINING,
+                WorkerLifecycle.STOPPING,
+                WorkerLifecycle.STOPPED,
+                WorkerLifecycle.FAILED,
+            }
             return {
                 "ok": self._state != WorkerLifecycle.FAILED,
                 "worker_id": self.worker_id,
@@ -172,7 +184,13 @@ class BaseWorker:
             count = int(metrics.get("generate_count", 0) or 0)
             total = float(metrics.get("total_generate_seconds", 0.0) or 0.0)
             metrics["avg_generate_seconds"] = total / count if count else 0.0
-            return {"ok": True, "worker_id": self.worker_id, "model": self.model_id, "metrics": metrics, "health": self.health_payload()}
+            return {
+                "ok": True,
+                "worker_id": self.worker_id,
+                "model": self.model_id,
+                "metrics": metrics,
+                "health": self.health_payload(),
+            }
 
     def cancel_request(self, request_id: str) -> bool:
         with self._lock:
@@ -224,9 +242,10 @@ class BaseWorker:
         split_on = os.environ.get("TTS_SPLIT", "1") == "1"
         text = req.text or ""
         if (not split_on) or len(text) < threshold:
-            return self.synthesize(req)   # normal path, unchanged
+            return self.synthesize(req)  # normal path, unchanged
 
         import re
+
         parts = re.split(r"(?<=[।.!?])\s+", text.strip())
         chunks, cur = [], ""
         for p in parts:
@@ -244,6 +263,7 @@ class BaseWorker:
             return self.synthesize(req)
 
         import dataclasses
+
         tmp_paths = []
         base = req.out_path
         for i, ch in enumerate(chunks):
@@ -255,13 +275,15 @@ class BaseWorker:
         try:
             import numpy as np
             import soundfile as sf
+
             arrs, sr = [], None
             for tp in tmp_paths:
                 a, s = sf.read(tp)
                 a = np.asarray(a, dtype="float32")
                 if a.ndim > 1:
                     a = a.mean(axis=1)
-                arrs.append(a); sr = s
+                arrs.append(a)
+                sr = s
             n = int((sr or 24000) * 15 / 1000)
             out = arrs[0]
             for nxt in arrs[1:]:
@@ -286,6 +308,7 @@ class BaseWorker:
     def device(self) -> str:
         try:
             import torch
+
             return "cuda" if torch.cuda.is_available() else "cpu"
         except Exception:
             return "cpu"
@@ -294,7 +317,7 @@ class BaseWorker:
 def _iso(timestamp: float | None) -> str | None:
     if timestamp is None:
         return None
-    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+    return datetime.fromtimestamp(timestamp, UTC).isoformat()
 
 
 def _make_handler(worker: BaseWorker):
@@ -336,7 +359,10 @@ def _make_handler(worker: BaseWorker):
                 elif self.path == "/unload":
                     worker.unload()
                     try:
-                        import torch, gc
+                        import gc
+
+                        import torch
+
                         gc.collect()
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
@@ -349,7 +375,9 @@ def _make_handler(worker: BaseWorker):
                     if not request_id:
                         self._send(400, {"ok": False, "error": "request_id required"})
                     else:
-                        self._send(200, {"ok": worker.cancel_request(request_id), "request_id": request_id})
+                        self._send(
+                            200, {"ok": worker.cancel_request(request_id), "request_id": request_id}
+                        )
                 elif self.path == "/shutdown":
                     payload = self._read()
                     worker.request_shutdown(str(payload.get("reason") or "http shutdown"))
@@ -359,7 +387,14 @@ def _make_handler(worker: BaseWorker):
                     payload = self._read()
                     request_id = str(payload.get("request_id") or uuid4())
                     if not worker._semaphore.acquire(blocking=False):
-                        self._send(429, {"ok": False, "error": "worker concurrency limit reached", "request_id": request_id})
+                        self._send(
+                            429,
+                            {
+                                "ok": False,
+                                "error": "worker concurrency limit reached",
+                                "request_id": request_id,
+                            },
+                        )
                         return
                     started = time.time()
                     try:
@@ -368,7 +403,9 @@ def _make_handler(worker: BaseWorker):
                             worker._state = WorkerLifecycle.BUSY
                             worker._cancel_events.setdefault(request_id, threading.Event())
                         if worker.is_cancelled(request_id):
-                            self._send(499, {"ok": False, "error": "cancelled", "request_id": request_id})
+                            self._send(
+                                499, {"ok": False, "error": "cancelled", "request_id": request_id}
+                            )
                             return
                         req = GenRequest.from_json(payload)
                         worker.ensure_loaded()
@@ -377,24 +414,43 @@ def _make_handler(worker: BaseWorker):
                         with worker._lock:
                             worker._metrics["generate_count"] += 1
                             worker._metrics["total_generate_seconds"] += elapsed
-                        self._send(200, {"ok": True, "wav_path": req.out_path, "seconds": secs, "request_id": request_id})
+                        self._send(
+                            200,
+                            {
+                                "ok": True,
+                                "wav_path": req.out_path,
+                                "seconds": secs,
+                                "request_id": request_id,
+                            },
+                        )
                     except Exception as e:
                         with worker._lock:
                             worker._metrics["generate_failures"] += 1
                             worker._metrics["last_error"] = str(e)
-                        self._send(500, {"ok": False, "error": str(e), "trace": traceback.format_exc(), "request_id": request_id})
+                        self._send(
+                            500,
+                            {
+                                "ok": False,
+                                "error": str(e),
+                                "trace": traceback.format_exc(),
+                                "request_id": request_id,
+                            },
+                        )
                     finally:
                         with worker._lock:
                             worker._active_requests = max(0, worker._active_requests - 1)
                             worker._cancel_events.pop(request_id, None)
                             if worker._state == WorkerLifecycle.BUSY:
-                                worker._state = WorkerLifecycle.READY if worker.loaded else WorkerLifecycle.IDLE
+                                worker._state = (
+                                    WorkerLifecycle.READY if worker.loaded else WorkerLifecycle.IDLE
+                                )
                         worker._semaphore.release()
                 else:
                     self._send(404, {"ok": False, "error": "not found"})
             except Exception as e:
                 worker._set_state(WorkerLifecycle.FAILED)
                 self._send(500, {"ok": False, "error": str(e), "trace": traceback.format_exc()})
+
     return Handler
 
 

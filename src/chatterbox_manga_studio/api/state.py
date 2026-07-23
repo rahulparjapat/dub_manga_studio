@@ -1,9 +1,10 @@
 """API application state and service composition."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from ..common.config import load_config
 from ..services import (
@@ -14,16 +15,21 @@ from ..services import (
     PipelineServices,
     PipelineWorkflowFactory,
     ProviderManager,
-    WorkflowEngine,
     WorkerPool,
+    WorkflowEngine,
 )
 from ..services.gpu_scheduler import GPUDevice
 from ..services.model_manager import ExistingWorkerRuntime, NoopModelRuntime
 from ..services.plugin_registry import PluginRegistry, build_registry_from_config
-from ..services.worker_runtime import WorkerRuntime
-from .lifecycle import BackgroundServiceManager, initialize_providers, initialize_worker_runtimes, initialize_workers
 from ..services.storage_manager import StorageManager, create_filesystem_stores
 from ..services.storage_manager.config import StorageRoutingConfig, load_storage_routing_from_env
+from ..services.worker_runtime import WorkerRuntime
+from .lifecycle import (
+    BackgroundServiceManager,
+    initialize_providers,
+    initialize_worker_runtimes,
+    initialize_workers,
+)
 
 
 @dataclass
@@ -65,9 +71,22 @@ async def build_api_state(*, data_root: Path | None = None, noop_models: bool = 
     await initialize_providers(providers)
     await initialize_workers(workers, registry)
     worker_runtimes = initialize_worker_runtimes(registry)
-    models = ModelManager(storage, registry=registry, runtime=NoopModelRuntime() if noop_models else ExistingWorkerRuntime(), event_bus=bus)
+    models = ModelManager(
+        storage,
+        registry=registry,
+        runtime=NoopModelRuntime() if noop_models else ExistingWorkerRuntime(),
+        event_bus=bus,
+    )
     await models.initialize()
-    services = PipelineServices(storage=storage, jobs=jobs, events=bus, providers=providers, models=models, workers=workers, gpus=gpus)
+    services = PipelineServices(
+        storage=storage,
+        jobs=jobs,
+        events=bus,
+        providers=providers,
+        models=models,
+        workers=workers,
+        gpus=gpus,
+    )
     pipeline_factory = PipelineWorkflowFactory(services)
     pipeline_factory.register(workflow)
     upload_root = root / "uploads"
@@ -81,7 +100,23 @@ async def build_api_state(*, data_root: Path | None = None, noop_models: bool = 
         "plugins": registry.list_model_ids(),
         "storage_routing": storage_routing.to_dict(),
     }
-    return APIState(bus, storage, jobs, workflow, providers, models, workers, gpus, pipeline_factory, upload_root, registry, worker_runtimes, background, startup_health, storage_routing)
+    return APIState(
+        bus,
+        storage,
+        jobs,
+        workflow,
+        providers,
+        models,
+        workers,
+        gpus,
+        pipeline_factory,
+        upload_root,
+        registry,
+        worker_runtimes,
+        background,
+        startup_health,
+        storage_routing,
+    )
 
 
 def _build_gpu_scheduler(config: dict, *, event_bus: EventBus) -> GPUScheduler:
@@ -91,13 +126,15 @@ def _build_gpu_scheduler(config: dict, *, event_bus: EventBus) -> GPUScheduler:
     for gpu_id, profile in profiles.items():
         if active != "auto" and gpu_id != active:
             continue
-        devices.append(GPUDevice(
-            gpu_id=gpu_id,
-            label=str(profile.get("label", gpu_id)),
-            total_vram_gb=float(profile.get("vram_gb", 0) or 0),
-            reserve_vram_gb=float(profile.get("min_free_vram_reserve_gb", 0) or 0),
-            metadata=profile,
-        ))
+        devices.append(
+            GPUDevice(
+                gpu_id=gpu_id,
+                label=str(profile.get("label", gpu_id)),
+                total_vram_gb=float(profile.get("vram_gb", 0) or 0),
+                reserve_vram_gb=float(profile.get("min_free_vram_reserve_gb", 0) or 0),
+                metadata=profile,
+            )
+        )
     if not devices:
         devices = [GPUDevice(gpu_id="cpu", label="CPU / no GPU profile", total_vram_gb=0)]
     return GPUScheduler(devices, event_bus=event_bus)

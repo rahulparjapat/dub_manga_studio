@@ -8,11 +8,15 @@ Steps per raw cue:
 Also: WAV crossfade join for internal long-text parts.
 Natural pauses BETWEEN cues are separate timeline gaps (never crossfaded).
 """
+
 from __future__ import annotations
+
+from pathlib import Path
+
 import numpy as np
 import soundfile as sf
-from pathlib import Path
-from ..common.config import load_config, get
+
+from ..common.config import load_config
 from ..common.logging_util import get_logger
 
 log = get_logger("cleanup")
@@ -103,7 +107,7 @@ def _denoise_spectral_gate(x: np.ndarray, sr: int, strength: float = 1.0) -> np.
     n_frames = 1 + (len(x) - n_fft) // hop
     if n_frames < 4:
         return x
-    frames = np.stack([x[i * hop:i * hop + n_fft] * win for i in range(n_frames)])
+    frames = np.stack([x[i * hop : i * hop + n_fft] * win for i in range(n_frames)])
     spec = np.fft.rfft(frames, axis=1)
     mag = np.abs(spec)
     phase = np.angle(spec)
@@ -124,8 +128,8 @@ def _denoise_spectral_gate(x: np.ndarray, sr: int, strength: float = 1.0) -> np.
     wsum = np.zeros(len(x), dtype=np.float32)
     for i in range(n_frames):
         s = i * hop
-        out[s:s + n_fft] += rec_frames[i] * win
-        wsum[s:s + n_fft] += win ** 2
+        out[s : s + n_fft] += rec_frames[i] * win
+        wsum[s : s + n_fft] += win**2
     nz = wsum > 1e-6
     out[nz] /= wsum[nz]
     # keep the untouched tail (samples beyond the last full frame)
@@ -144,9 +148,11 @@ def _atempo_chain(speed: float) -> str:
     factors = []
     # break the ratio into in-range multiplicative steps
     while s > 2.0:
-        factors.append(2.0); s /= 2.0
+        factors.append(2.0)
+        s /= 2.0
     while s < 0.5:
-        factors.append(0.5); s /= 0.5
+        factors.append(0.5)
+        s /= 0.5
     factors.append(round(s, 4))
     return ",".join(f"atempo={f}" for f in factors)
 
@@ -155,14 +161,16 @@ def apply_speed(path: str, speed: float) -> None:
     """Time-stretch an audio file IN PLACE by `speed` (>1 faster, <1 slower),
     keeping the pitch natural (ffmpeg atempo). speed==1.0 is a no-op. Best-effort:
     on any failure the original file is left untouched (never breaks a dub)."""
-    import subprocess
     import shutil
+    import subprocess
+
     if abs(float(speed) - 1.0) < 1e-3:
         return
     ff = shutil.which("ffmpeg")
     if not ff:
         try:
             import imageio_ffmpeg
+
             ff = imageio_ffmpeg.get_ffmpeg_exe()
         except Exception:
             log.warning("speed change skipped (%.2fx): ffmpeg not found", speed)
@@ -170,13 +178,18 @@ def apply_speed(path: str, speed: float) -> None:
     tmp = str(Path(path).with_suffix(".spd.wav"))
     chain = _atempo_chain(speed)
     try:
-        r = subprocess.run([ff, "-y", "-i", path, "-filter:a", chain, tmp],
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        r = subprocess.run(
+            [ff, "-y", "-i", path, "-filter:a", chain, tmp],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
         if r.returncode == 0 and Path(tmp).exists() and Path(tmp).stat().st_size > 512:
             shutil.move(tmp, path)
         else:
-            log.warning("speed change failed (%.2fx), keeping original: %s",
-                        speed, (r.stdout or "")[-200:])
+            log.warning(
+                "speed change failed (%.2fx), keeping original: %s", speed, (r.stdout or "")[-200:]
+            )
     except Exception as e:  # noqa: BLE001
         log.warning("speed change error (%.2fx): %s", speed, e)
     finally:
@@ -187,8 +200,13 @@ def apply_speed(path: str, speed: float) -> None:
             pass
 
 
-def clean_cue(in_path: str, out_path: str, denoise: bool = False,
-              denoise_strength: float = 1.0, speed: float = 1.0) -> float:
+def clean_cue(
+    in_path: str,
+    out_path: str,
+    denoise: bool = False,
+    denoise_strength: float = 1.0,
+    speed: float = 1.0,
+) -> float:
     """Clean one raw cue WAV; write final; return cleaned duration seconds.
 
     denoise: optional spectral-gate denoiser (removes hiss/hum).

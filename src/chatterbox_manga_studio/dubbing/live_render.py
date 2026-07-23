@@ -12,22 +12,25 @@ VRAM: user chose FULL PARALLEL (no auto-pause). NOTE: TTS + NVENC run at once an
 compete for VRAM — on 24 GB this is usually fine for small TTS models; watch for OOM
 on the largest models. Pause/Resume/Cancel still work manually.
 """
+
 from __future__ import annotations
+
 import json
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
-from ..common.paths import edition_dir
-from ..common.config import load_config, active_profile
+from ..common.config import active_profile, load_config
 from ..common.logging_util import get_logger
+from ..common.paths import edition_dir
 
 log = get_logger("live_render")
 
 
 @dataclass
 class LiveState:
-    pipeline_state: str = "idle"       # idle|running|paused|cancelled|done
+    pipeline_state: str = "idle"  # idle|running|paused|cancelled|done
     cleaned_cues: int = 0
     total_cues: int = 0
     completed_groups: int = 0
@@ -45,9 +48,9 @@ class LivePipeline:
         self._lock = threading.Lock()
         self._pause = threading.Event()
         self._cancel = threading.Event()
-        self._ready: set[int] = set()          # cue idx that are cleaned & ready
+        self._ready: set[int] = set()  # cue idx that are cleaned & ready
         self._tts_done = threading.Event()
-        self._wake = threading.Condition()     # M4: signal instead of busy-wait
+        self._wake = threading.Condition()  # M4: signal instead of busy-wait
         self._thread: threading.Thread | None = None
         cfg = load_config()
         lr = cfg.get("live_render", {})
@@ -60,7 +63,8 @@ class LivePipeline:
 
     # ---------- controls ----------
     def pause(self):
-        self._pause.set(); self.state.pipeline_state = "paused"
+        self._pause.set()
+        self.state.pipeline_state = "paused"
 
     def resume(self):
         self._pause.clear()
@@ -68,12 +72,14 @@ class LivePipeline:
             self.state.pipeline_state = "running"
 
     def cancel(self):
-        self._cancel.set(); self.state.pipeline_state = "cancelled"
+        self._cancel.set()
+        self.state.pipeline_state = "cancelled"
 
     def snapshot(self) -> dict:
         with self._lock:
             try:
                 from .vram_manager import free_vram_gb
+
                 self.state.free_vram_gb = free_vram_gb()
             except Exception:
                 pass
@@ -84,7 +90,7 @@ class LivePipeline:
         with self._lock:
             self._ready.add(cue_idx)
             self.state.cleaned_cues = len(self._ready)
-        with self._wake:            # M4: wake the render loop
+        with self._wake:  # M4: wake the render loop
             self._wake.notify_all()
 
     def mark_tts_done(self):
@@ -116,7 +122,8 @@ class LivePipeline:
         self.state.pipeline_state = "running"
         self._save_manifest({"groups": {}})
         self._thread = threading.Thread(
-            target=self._run_loop, args=(cues, render_group_fn), daemon=True)
+            target=self._run_loop, args=(cues, render_group_fn), daemon=True
+        )
         self._thread.start()
 
     def _group_ready(self, cues, g) -> bool:
@@ -127,7 +134,7 @@ class LivePipeline:
     def _run_loop(self, cues, render_group_fn):
         # `start()` resets the manifest.  Never treat groups from an earlier dub as
         # complete: their video timing was derived from different generated audio.
-        m = {"groups": {}}
+        m: dict[str, Any] = {"groups": {}}
         rendered: set[int] = set()
         while not self._cancel.is_set():
             # pause handling
@@ -151,8 +158,7 @@ class LivePipeline:
                             # Store the exact durations that were used to retime this
                             # group.  Later export may reuse it only if its current
                             # audio master has the same cue timing.
-                            "audio_seconds": [round(float(c.audio_seconds), 6)
-                                              for c in group_cues],
+                            "audio_seconds": [round(float(c.audio_seconds), 6) for c in group_cues],
                             "timing_mode": "Cue-Locked Audio Master Sync",
                         }
                         self._save_manifest(m)
@@ -178,8 +184,9 @@ class LivePipeline:
         return self._load_manifest().get("groups", {})
 
 
-def cache_matches_timeline(groups: dict, timeline, timing_mode: str,
-                           tolerance_s: float = 0.002) -> bool:
+def cache_matches_timeline(
+    groups: dict, timeline, timing_mode: str, tolerance_s: float = 0.002
+) -> bool:
     """True only when cached live-render groups match this exact audio timeline.
 
     Live groups are always rendered in the no-gap cue-locked mode.  Matching only
@@ -198,14 +205,22 @@ def cache_matches_timeline(groups: dict, timeline, timing_mode: str,
                 return False
             ids = group.get("cue_ids")
             durations = group.get("audio_seconds")
-            if not isinstance(ids, list) or not isinstance(durations, list) or len(ids) != len(durations):
+            if (
+                not isinstance(ids, list)
+                or not isinstance(durations, list)
+                or len(ids) != len(durations)
+            ):
                 return False
             cached_ids.extend(int(i) for i in ids)
             cached_durations.extend(float(d) for d in durations)
     except (TypeError, ValueError):
         return False
     cue_segments = [s for s in timeline.segments if s.kind == "cue"]
-    if cached_ids != [s.cue_idx for s in cue_segments] or len(cached_durations) != len(cue_segments):
+    if cached_ids != [s.cue_idx for s in cue_segments] or len(cached_durations) != len(
+        cue_segments
+    ):
         return False
-    return all(abs(cached - segment.out_duration) <= tolerance_s
-               for cached, segment in zip(cached_durations, cue_segments))
+    return all(
+        abs(cached - segment.out_duration) <= tolerance_s
+        for cached, segment in zip(cached_durations, cue_segments, strict=True)
+    )

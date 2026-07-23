@@ -1,4 +1,5 @@
 """Plugin runtimes that wrap existing workers without rewriting model logic."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,14 +8,16 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from .plugin_registry import ModelCapabilities, PluginRegistry, ModelPlugin
+from .plugin_registry import ModelCapabilities, ModelPlugin, PluginRegistry
 from .worker_runtime import RuntimeInferenceRequest, WorkerAdapter, WorkerRuntime
 
 
 class HTTPWorkerAdapter:
     """WorkerAdapter for stdlib HTTP workers exposing /load, /generate, /unload."""
 
-    def __init__(self, capabilities: ModelCapabilities, endpoint: str, *, worker_id: str | None = None) -> None:
+    def __init__(
+        self, capabilities: ModelCapabilities, endpoint: str, *, worker_id: str | None = None
+    ) -> None:
         self._capabilities = capabilities
         self.endpoint = endpoint.rstrip("/")
         self._worker_id = worker_id or f"http:{capabilities.model_id}:{self.endpoint}"
@@ -110,7 +113,12 @@ class RouterWorkerAdapter:
             from ..dubbing.router import get_router
 
             router = get_router()
-            return {"ok": True, "worker_id": self.worker_id, "model": self.capabilities.model_id, "loaded": router.current_model() == self.capabilities.model_id}
+            return {
+                "ok": True,
+                "worker_id": self.worker_id,
+                "model": self.capabilities.model_id,
+                "loaded": router.current_model() == self.capabilities.model_id,
+            }
 
         return await asyncio.to_thread(_health)
 
@@ -161,7 +169,12 @@ class WhisperWorkerAdapter:
         return False
 
     async def health(self) -> dict[str, Any]:
-        return {"ok": True, "worker_id": self.worker_id, "model": self.capabilities.model_id, "loaded": False}
+        return {
+            "ok": True,
+            "worker_id": self.worker_id,
+            "model": self.capabilities.model_id,
+            "loaded": False,
+        }
 
 
 class PluginRuntimeFactory:
@@ -170,7 +183,9 @@ class PluginRuntimeFactory:
     def __init__(self, registry: PluginRegistry) -> None:
         self.registry = registry
 
-    def adapter_for(self, model_id: str, *, endpoint: str | None = None, instances: int = 1) -> WorkerAdapter:
+    def adapter_for(
+        self, model_id: str, *, endpoint: str | None = None, instances: int = 1
+    ) -> WorkerAdapter:
         plugin = self.registry.require(model_id)
         if endpoint:
             return HTTPWorkerAdapter(plugin.capabilities, endpoint)
@@ -179,16 +194,33 @@ class PluginRuntimeFactory:
             return WhisperWorkerAdapter(plugin)
         return RouterWorkerAdapter(plugin, instances=instances)
 
-    def runtime_for(self, model_id: str, *, endpoint: str | None = None, instances: int = 1, max_concurrency: int = 1) -> WorkerRuntime:
-        return WorkerRuntime(self.adapter_for(model_id, endpoint=endpoint, instances=instances), max_concurrency=max_concurrency)
+    def runtime_for(
+        self,
+        model_id: str,
+        *,
+        endpoint: str | None = None,
+        instances: int = 1,
+        max_concurrency: int = 1,
+    ) -> WorkerRuntime:
+        return WorkerRuntime(
+            self.adapter_for(model_id, endpoint=endpoint, instances=instances),
+            max_concurrency=max_concurrency,
+        )
 
 
-def build_plugin_runtimes(registry: PluginRegistry, *, max_concurrency: int = 1) -> dict[str, WorkerRuntime]:
+def build_plugin_runtimes(
+    registry: PluginRegistry, *, max_concurrency: int = 1
+) -> dict[str, WorkerRuntime]:
     factory = PluginRuntimeFactory(registry)
-    return {model_id: factory.runtime_for(model_id, max_concurrency=max_concurrency) for model_id in registry.list_model_ids()}
+    return {
+        model_id: factory.runtime_for(model_id, max_concurrency=max_concurrency)
+        for model_id in registry.list_model_ids()
+    }
 
 
-async def _http_json(url: str, payload: dict[str, Any] | None, *, method: str = "POST", timeout: float = 30.0) -> dict[str, Any]:
+async def _http_json(
+    url: str, payload: dict[str, Any] | None, *, method: str = "POST", timeout: float = 30.0
+) -> dict[str, Any]:
     def _request() -> dict[str, Any]:
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         req = urllib.request.Request(

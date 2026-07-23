@@ -7,11 +7,27 @@ import pytest
 
 from chatterbox_manga_studio.services.events import EventBus, EventType
 from chatterbox_manga_studio.services.job_scheduler import JobScheduler, JobStatus
-from chatterbox_manga_studio.services.model_manager import ModelManager, ModelSelectionCriteria, NoopModelRuntime
-from chatterbox_manga_studio.services.plugin_registry import ExistingWorkerPlugin, PluginRegistry, WorkerPluginConfig
+from chatterbox_manga_studio.services.model_manager import (
+    ModelManager,
+    ModelSelectionCriteria,
+    NoopModelRuntime,
+)
+from chatterbox_manga_studio.services.plugin_registry import (
+    ExistingWorkerPlugin,
+    PluginRegistry,
+    WorkerPluginConfig,
+)
 from chatterbox_manga_studio.services.provider_manager import FunctionProvider, ProviderManager
-from chatterbox_manga_studio.services.storage_manager import StorageManager, create_filesystem_stores
-from chatterbox_manga_studio.services.workflow_engine import WorkflowDefinition, WorkflowEngine, WorkflowNode, WorkflowStatus
+from chatterbox_manga_studio.services.storage_manager import (
+    StorageManager,
+    create_filesystem_stores,
+)
+from chatterbox_manga_studio.services.workflow_engine import (
+    WorkflowDefinition,
+    WorkflowEngine,
+    WorkflowNode,
+    WorkflowStatus,
+)
 
 
 @pytest.mark.integration
@@ -35,30 +51,40 @@ async def test_phase1_services_integrate_through_storage_and_events():
             return {"node": ctx.node_id}
 
         workflow.register_handler("node", node)
-        run = await workflow.execute(WorkflowDefinition(name="wf", nodes=[WorkflowNode(id="n1", handler="node")]))
+        run = await workflow.execute(
+            WorkflowDefinition(name="wf", nodes=[WorkflowNode(id="n1", handler="node")])
+        )
         assert run.status == WorkflowStatus.COMPLETED
         await scheduler.complete_job(job.id, {"run_id": run.id})
         assert (await scheduler.get_job(job.id)).status == JobStatus.COMPLETED
 
         providers = ProviderManager(bus)
-        await providers.register_provider(FunctionProvider("adapter", lambda req: {"ok": True}), priority=1)
+        await providers.register_provider(
+            FunctionProvider("adapter", lambda req: {"ok": True}), priority=1
+        )
         assert (await providers.execute("adapt")).result == {"ok": True}
 
         registry = PluginRegistry(bus)
-        await registry.register(ExistingWorkerPlugin(WorkerPluginConfig(
-            model_id="m1",
-            label="M1",
-            license_flag="test",
-            estimated_vram=1,
-            supported_languages=["en"],
-            supports_voice_clone=False,
-            supports_reference_text=False,
-            supports_emotions=False,
-            batch_support=False,
-        )))
+        await registry.register(
+            ExistingWorkerPlugin(
+                WorkerPluginConfig(
+                    model_id="m1",
+                    label="M1",
+                    license_flag="test",
+                    estimated_vram=1,
+                    supported_languages=["en"],
+                    supports_voice_clone=False,
+                    supports_reference_text=False,
+                    supports_emotions=False,
+                    batch_support=False,
+                )
+            )
+        )
         models = ModelManager(storage, registry=registry, runtime=NoopModelRuntime(), event_bus=bus)
         await models.initialize()
-        assert (await models.recommend_model(ModelSelectionCriteria(language="en"))).model_id == "m1"
+        assert (
+            await models.recommend_model(ModelSelectionCriteria(language="en"))
+        ).model_id == "m1"
         await models.load_model("m1")
 
         event_types = [event.type for event in bus.history()]

@@ -13,7 +13,9 @@ On T4 (no bf16) we use float16; on L4 we use bfloat16. Apache-2.0 -> commercial-
 10 languages (ZH/EN/JP/KR/DE/FR/RU/PT/ES/IT) — NOT trained on Hindi, so best for
 English / Hinglish-Roman where English phonetics dominate.
 """
+
 from __future__ import annotations
+
 import os
 import sys
 
@@ -30,6 +32,7 @@ class Qwen3TTSWorker(BaseWorker):
 
     def load_model(self):
         import torch
+
         # T4 (Turing) cannot do bf16 -> use fp16; L4/Ada -> bf16. TTS_PRECISION is
         # set by the router from the active GPU profile.
         prec = os.environ.get("TTS_PRECISION", "float16").lower()
@@ -38,15 +41,16 @@ class Qwen3TTSWorker(BaseWorker):
         else:
             dtype = torch.float16
         from qwen_tts import Qwen3TTSModel
-        kw = dict(device_map="cuda:0" if torch.cuda.is_available() else "cpu", dtype=dtype)
+
+        kw = {"device_map": "cuda:0" if torch.cuda.is_available() else "cpu", "dtype": dtype}
         # FlashAttention 2 greatly cuts VRAM but isn't always installable; try it,
         # fall back to the default attention implementation if unavailable.
         try:
             self._model = Qwen3TTSModel.from_pretrained(
-                REPO_ID, attn_implementation="flash_attention_2", **kw)
+                REPO_ID, attn_implementation="flash_attention_2", **kw
+            )
         except Exception as e:
-            print(f"[qwen3tts] flash_attention_2 unavailable ({e}); default attention.",
-                  flush=True)
+            print(f"[qwen3tts] flash_attention_2 unavailable ({e}); default attention.", flush=True)
             self._model = Qwen3TTSModel.from_pretrained(REPO_ID, **kw)
 
     def _lang_name(self, target: str) -> str:
@@ -54,14 +58,16 @@ class Qwen3TTSWorker(BaseWorker):
         return {"english": "English"}.get(target, "Auto")
 
     def synthesize(self, req: GenRequest) -> float:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
+
         if not req.reference_wav:
             raise ValueError(
                 "Qwen3-TTS (Base clone) needs a reference voice. Use 'Auto default "
-                "voice' or a saved reference voice.")
+                "voice' or a saved reference voice."
+            )
         # emotion_tags are natural-language style instructions for Qwen (e.g. 'Very happy.')
-        instruct = (req.emotion_tags or "").strip() or None
+        (req.emotion_tags or "").strip() or None
         lang = self._lang_name(req.target)
 
         # Official Qwen Base checkpoint API is generate_voice_clone().  The Base
@@ -70,11 +76,17 @@ class Qwen3TTSWorker(BaseWorker):
         # after model download with an unexpected-keyword error.
         fn = getattr(self._model, "generate_voice_clone", None)
         if fn is None:
-            raise RuntimeError("Installed qwen-tts has no generate_voice_clone API; "
-                               "reinstall with scripts/install_model_qwen3tts.sh.")
+            raise RuntimeError(
+                "Installed qwen-tts has no generate_voice_clone API; "
+                "reinstall with scripts/install_model_qwen3tts.sh."
+            )
         try:
-            wavs, sr = fn(text=req.text, ref_audio=req.reference_wav,
-                           ref_text=req.reference_text or "", language=lang)
+            wavs, sr = fn(
+                text=req.text,
+                ref_audio=req.reference_wav,
+                ref_text=req.reference_text or "",
+                language=lang,
+            )
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Qwen3-TTS voice clone failed: {e}") from e
 

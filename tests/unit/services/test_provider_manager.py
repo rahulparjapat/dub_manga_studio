@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from chatterbox_manga_studio.services.provider_manager import FunctionProvider, ProviderManager, RateLimitConfig
+from chatterbox_manga_studio.services.provider_manager import (
+    FunctionProvider,
+    ProviderManager,
+    RateLimitConfig,
+)
 
 
 @pytest.mark.asyncio
@@ -26,7 +30,9 @@ async def test_provider_manager_failover_after_retries():
         calls["bad"] += 1
         raise RuntimeError("provider down")
 
-    await manager.register_provider(FunctionProvider("bad", bad), priority=1, retries=1, cooldown_seconds=60)
+    await manager.register_provider(
+        FunctionProvider("bad", bad), priority=1, retries=1, cooldown_seconds=60
+    )
     await manager.register_provider(FunctionProvider("good", lambda req: "ok"), priority=2)
 
     response = await manager.execute("adapt")
@@ -44,7 +50,9 @@ async def test_provider_manager_rate_limit_uses_next_provider():
         priority=1,
         rate_limit=RateLimitConfig(max_requests=1, window_seconds=60),
     )
-    await manager.register_provider(FunctionProvider("fallback", lambda req: "fallback"), priority=2)
+    await manager.register_provider(
+        FunctionProvider("fallback", lambda req: "fallback"), priority=2
+    )
 
     assert (await manager.execute("x")).provider == "limited"
     assert (await manager.execute("x")).provider == "fallback"

@@ -10,7 +10,9 @@ documented `VibeVoiceForConditionalGeneration` + processor pattern and degrades 
 with a clear error if the installed fork differs, so the app never crashes — it just marks
 this worker unavailable and offers a fallback model.
 """
+
 from __future__ import annotations
+
 import os
 import sys
 
@@ -26,6 +28,7 @@ class VibeVoiceWorker(BaseWorker):
 
     def load_model(self):
         import torch
+
         # Avoid flash-attn hard requirement: force sdpa.
         os.environ.setdefault("VIBEVOICE_ATTN", "sdpa")
         try:
@@ -38,18 +41,21 @@ class VibeVoiceWorker(BaseWorker):
                 "VibeVoice community package not importable in this venv. "
                 "Run scripts/install_model_vibevoice.sh. "
                 f"Underlying import error: {e}"
-            )
+            ) from e
         # T4/Turing has no BF16 tensor support.  Loading a BF16 Hindi checkpoint
         # or using BF16 as bitsandbytes compute dtype causes an avoidable failure;
         # use FP16 there and BF16 only on Ampere/Ada/Hopper.
-        dtype = (torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-                 else torch.float16)
+        dtype = (
+            torch.bfloat16
+            if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+            else torch.float16
+        )
         quant = None
         if os.environ.get("VIBEVOICE_4BIT", "1") == "1":
             try:
                 from transformers import BitsAndBytesConfig
-                quant = BitsAndBytesConfig(load_in_4bit=True,
-                                           bnb_4bit_compute_dtype=dtype)
+
+                quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=dtype)
             except Exception:
                 quant = None
         self._processor = VibeVoiceProcessor.from_pretrained(DEFAULT_MODEL)
@@ -63,8 +69,9 @@ class VibeVoiceWorker(BaseWorker):
         self._model.eval()
 
     def synthesize(self, req: GenRequest) -> float:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
+
         # VibeVoice expects a script and one or more speaker voice samples.
         voices = [req.reference_wav] if req.reference_wav else None
         # The community VibeVoice parser requires an explicit speaker label.
@@ -78,6 +85,7 @@ class VibeVoiceWorker(BaseWorker):
             return_tensors="pt",
         )
         import torch
+
         dev = "cuda" if torch.cuda.is_available() else "cpu"
         inputs = {k: (v.to(dev) if hasattr(v, "to") else v) for k, v in inputs.items()}
         with torch.no_grad():

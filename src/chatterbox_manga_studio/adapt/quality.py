@@ -15,6 +15,7 @@ Design rules:
     so we never break the existing pipeline.
   * No new hard dependencies (stdlib json + re only).
 """
+
 from __future__ import annotations
 
 import json
@@ -25,12 +26,12 @@ import re
 # ---------------------------------------------------------------------------
 
 CUE_JSON_INSTRUCTIONS = (
-    "OUTPUT FORMAT (STRICT): Return a single JSON object with a key \"cues\" whose "
+    'OUTPUT FORMAT (STRICT): Return a single JSON object with a key "cues" whose '
     "value is an array. Each array element must be an object: "
-    "{\"n\": <cue number>, \"text\": \"<adapted narration for that cue>\"}. "
+    '{"n": <cue number>, "text": "<adapted narration for that cue>"}. '
     "Return EXACTLY one element per input cue, in the same order, same count. "
     "Do not merge or split cues. Do not add extra keys, comments, or markdown. "
-    "The \"text\" must contain ONLY the spoken narration."
+    'The "text" must contain ONLY the spoken narration.'
 )
 
 
@@ -45,16 +46,19 @@ def build_cue_payload(cues: list[dict]) -> str:
         start = float(c.get("start", 0.0) or 0.0)
         end = float(c.get("end", start) or start)
         dur = max(0.0, round(end - start, 2))
-        items.append({
-            "n": i + 1,
-            "seconds": dur,
-            "source": (c.get("text") or "").strip(),
-        })
+        items.append(
+            {
+                "n": i + 1,
+                "seconds": dur,
+                "source": (c.get("text") or "").strip(),
+            }
+        )
     return json.dumps({"cues": items}, ensure_ascii=False, indent=0)
 
 
-def duration_fit(cues: list[dict], lines: list[str], words_per_second: float = 3.0,
-                 minimum_ratio: float = 0.85) -> dict:
+def duration_fit(
+    cues: list[dict], lines: list[str], words_per_second: float = 3.0, minimum_ratio: float = 0.85
+) -> dict:
     """Return predicted duration and under-length cue indices for advisory/repair UI."""
     rows, total_target, total_words = [], 0.0, 0
     for i, cue in enumerate(cues):
@@ -63,13 +67,23 @@ def duration_fit(cues: list[dict], lines: list[str], words_per_second: float = 3
         text = re.sub(r"^\s*\([^)]{0,100}\)\s*", "", text)
         words = len(re.findall(r"\b[\w'-]+\b", text, flags=re.UNICODE))
         target_words = seconds * words_per_second
-        rows.append({"idx": i, "seconds": seconds, "words": words,
-                     "target_words": target_words,
-                     "short": seconds >= 3 and words < target_words * minimum_ratio})
+        rows.append(
+            {
+                "idx": i,
+                "seconds": seconds,
+                "words": words,
+                "target_words": target_words,
+                "short": seconds >= 3 and words < target_words * minimum_ratio,
+            }
+        )
         total_target += seconds
         total_words += words
-    return {"rows": rows, "source_seconds": total_target, "words": total_words,
-            "predicted_seconds": total_words / words_per_second if words_per_second else 0.0}
+    return {
+        "rows": rows,
+        "source_seconds": total_target,
+        "words": total_words,
+        "predicted_seconds": total_words / words_per_second if words_per_second else 0.0,
+    }
 
 
 def duration_rules(cues: list[dict]) -> str:
@@ -77,7 +91,7 @@ def duration_rules(cues: list[dict]) -> str:
     if not cues:
         return ""
     return (
-        "DURATION FIT — DURATION LOCK (MANDATORY): Each input cue includes a \"seconds\" value = "
+        'DURATION FIT — DURATION LOCK (MANDATORY): Each input cue includes a "seconds" value = '
         "the required spoken duration. Do NOT summarize, omit plot information, merge "
         "events, or turn a full explanation into a recap. Write enough natural target "
         "narration to fill approximately that duration: about 2.8–3.3 spoken words/sec "
@@ -114,8 +128,12 @@ def parse_cue_response(text: str, expected: int) -> tuple[list[str], list[str]]:
                         return int(e.get("n", idx + 1))
                     except Exception:
                         return idx + 1
-                pairs = [(_key(e, i), (e.get("text") or "").strip())
-                         for i, e in enumerate(arr) if isinstance(e, dict)]
+
+                pairs = [
+                    (_key(e, i), (e.get("text") or "").strip())
+                    for i, e in enumerate(arr)
+                    if isinstance(e, dict)
+                ]
                 pairs.sort(key=lambda p: p[0])
                 lines = [t for _, t in pairs]
         except Exception as e:  # noqa: BLE001
@@ -135,12 +153,14 @@ def parse_cue_response(text: str, expected: int) -> tuple[list[str], list[str]]:
     if len(lines) < expected:
         warnings.append(
             f"AI returned {len(lines)} lines but {expected} cues expected — "
-            f"padded {expected - len(lines)} empty line(s); please review.")
+            f"padded {expected - len(lines)} empty line(s); please review."
+        )
         lines = lines + [""] * (expected - len(lines))
     elif len(lines) > expected:
         warnings.append(
             f"AI returned {len(lines)} lines but {expected} cues expected — "
-            f"trimmed {len(lines) - expected}; please review.")
+            f"trimmed {len(lines) - expected}; please review."
+        )
         lines = lines[:expected]
 
     return lines, warnings
@@ -149,6 +169,7 @@ def parse_cue_response(text: str, expected: int) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------------
 # 3 : cross-batch context carryover
 # ---------------------------------------------------------------------------
+
 
 def summarise_tail(lines: list[str], max_lines: int = 3, max_chars: int = 400) -> str:
     """Take the last few adapted lines of the previous batch as verbatim context."""
@@ -167,7 +188,8 @@ def build_context_block(prior_tail: str, story_summary: str = "") -> str:
     if prior_tail:
         parts.append(
             "PREVIOUS BATCH ENDED WITH (continue tone/terms seamlessly, do NOT "
-            f"repeat these lines): \"{prior_tail}\"")
+            f'repeat these lines): "{prior_tail}"'
+        )
     return "\n".join(parts)
 
 
@@ -176,11 +198,11 @@ def build_context_block(prior_tail: str, story_summary: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 GLOSSARY_INSTRUCTIONS = (
-    "GLOSSARY OUTPUT: In the SAME JSON object, also include a key \"glossary\" "
+    'GLOSSARY OUTPUT: In the SAME JSON object, also include a key "glossary" '
     "mapping any proper nouns you translated to keep them consistent. Shape: "
-    "{\"characters\": {\"<source name>\": \"<your translation>\"}, "
-    "\"powers\": {...}, \"realms\": {...}, \"clans\": {...}, "
-    "\"systems\": {...}, \"locations\": {...}}. Only include names that appear in "
+    '{"characters": {"<source name>": "<your translation>"}, '
+    '"powers": {...}, "realms": {...}, "clans": {...}, '
+    '"systems": {...}, "locations": {...}}. Only include names that appear in '
     "THIS batch. If none, use empty objects."
 )
 
@@ -203,8 +225,9 @@ def extract_glossary_from_response(text: str) -> dict:
     for cat in _GLOSSARY_CATS:
         v = g.get(cat)
         if isinstance(v, dict):
-            out[cat] = {str(k): str(val) for k, val in v.items()
-                        if str(k).strip() and str(val).strip()}
+            out[cat] = {
+                str(k): str(val) for k, val in v.items() if str(k).strip() and str(val).strip()
+            }
     return out
 
 
@@ -218,8 +241,10 @@ def glossary_lock_block(glossary: dict | None) -> str:
             flat[k] = v
     if not flat:
         return ""
-    return ("GLOSSARY LOCK (use these EXACT translations for these names — "
-            "do not re-invent): " + json.dumps(flat, ensure_ascii=False))
+    return (
+        "GLOSSARY LOCK (use these EXACT translations for these names — "
+        "do not re-invent): " + json.dumps(flat, ensure_ascii=False)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -230,8 +255,8 @@ BACKCHECK_INSTRUCTIONS = (
     "You are a bilingual QA reviewer. You are given the ORIGINAL source cues and a "
     "proposed ADAPTED line for each. For every cue, judge whether the adaptation "
     "preserves the source meaning. Return ONLY a JSON object: "
-    "{\"checks\": [{\"n\": <cue number>, \"ok\": true|false, "
-    "\"issue\": \"<short reason if not ok, else empty>\"}]}. "
+    '{"checks": [{"n": <cue number>, "ok": true|false, '
+    '"issue": "<short reason if not ok, else empty>"}]}. '
     "Be strict about lost/added meaning and wrong names; ignore stylistic choices."
 )
 
@@ -239,11 +264,13 @@ BACKCHECK_INSTRUCTIONS = (
 def build_backcheck_payload(cues: list[dict], adapted: list[str]) -> str:
     items = []
     for i, c in enumerate(cues):
-        items.append({
-            "n": i + 1,
-            "source": (c.get("text") or "").strip(),
-            "adapted": adapted[i] if i < len(adapted) else "",
-        })
+        items.append(
+            {
+                "n": i + 1,
+                "source": (c.get("text") or "").strip(),
+                "adapted": adapted[i] if i < len(adapted) else "",
+            }
+        )
     return json.dumps({"cues": items}, ensure_ascii=False, indent=0)
 
 
@@ -267,8 +294,9 @@ def parse_backcheck(text: str) -> list[dict]:
             n = int(e.get("n", i + 1))
         except Exception:
             n = i + 1
-        out.append({"n": n, "ok": bool(e.get("ok", True)),
-                    "issue": str(e.get("issue", "")).strip()})
+        out.append(
+            {"n": n, "ok": bool(e.get("ok", True)), "issue": str(e.get("issue", "")).strip()}
+        )
     return out
 
 

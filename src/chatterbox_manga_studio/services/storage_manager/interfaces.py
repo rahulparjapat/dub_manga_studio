@@ -3,6 +3,7 @@
 Only StorageManager binds concrete backends. Other Phase 1 services depend on
 these interfaces through the manager rather than filesystem/Redis/Postgres APIs.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -71,7 +72,9 @@ class ObjectStorageInterface(StorageBackendInterface, ABC):
     async def move(self, src_key: str, dst_key: str) -> StorageMetadata: ...
 
     @abstractmethod
-    async def get_presigned_url(self, key: str, expiration: int = 3_600, method: str = "GET") -> str: ...
+    async def get_presigned_url(
+        self, key: str, expiration: int = 3_600, method: str = "GET"
+    ) -> str: ...
 
 
 class KeyValueStorageInterface(StorageBackendInterface, ABC):

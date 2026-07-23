@@ -1,35 +1,43 @@
 from __future__ import annotations
 
 import platform
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 
 from ... import __version__
 from ...common.config import load_config
+from ...services.observability import metrics as metrics_registry
 from ..dependencies import get_state
 from ..schemas import OkResponse
-from ...services.observability import metrics as metrics_registry
 
 router = APIRouter(prefix="/system", tags=["system"])
 
 
 @router.get("/health", response_model=OkResponse)
 async def health(state=Depends(get_state)):
-    return OkResponse(data={
-        "storage": await state.storage.health_check_all(),
-        "providers": await state.providers.snapshot(),
-        "workers": await state.workers.snapshot(),
-        "gpus": await state.gpus.snapshot(),
-        "startup": state.startup_health,
-    })
+    return OkResponse(
+        data={
+            "storage": await state.storage.health_check_all(),
+            "providers": await state.providers.snapshot(),
+            "workers": await state.workers.snapshot(),
+            "gpus": await state.gpus.snapshot(),
+            "startup": state.startup_health,
+        }
+    )
 
 
 @router.get("/metrics", response_model=OkResponse)
 async def metrics(state=Depends(get_state)):
     jobs = await state.jobs.counts_by_status()
-    return OkResponse(data={"jobs": {str(k): v for k, v in jobs.items()}, "events": len(state.event_bus.history()), "gpus": await state.gpus.snapshot()})
+    return OkResponse(
+        data={
+            "jobs": {str(k): v for k, v in jobs.items()},
+            "events": len(state.event_bus.history()),
+            "gpus": await state.gpus.snapshot(),
+        }
+    )
 
 
 @router.get("/configuration", response_model=OkResponse)
@@ -50,7 +58,14 @@ async def diagnostics(state=Depends(get_state)):
         fastapi_version = version("fastapi")
     except PackageNotFoundError:
         fastapi_version = "unknown"
-    return OkResponse(data={"fastapi": fastapi_version, "platform": platform.platform(), "openapi": "/openapi.json", "storage": await state.storage.health_check_all()})
+    return OkResponse(
+        data={
+            "fastapi": fastapi_version,
+            "platform": platform.platform(),
+            "openapi": "/openapi.json",
+            "storage": await state.storage.health_check_all(),
+        }
+    )
 
 
 @router.get("/prometheus", response_class=PlainTextResponse)

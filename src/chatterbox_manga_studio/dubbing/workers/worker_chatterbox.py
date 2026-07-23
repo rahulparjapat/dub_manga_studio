@@ -12,7 +12,9 @@ internally to its generated audio; we do not add or remove it here. The config
 'watermark_default' flag is informational (Chatterbox = on by design; other models
 have no built-in watermark).
 """
+
 from __future__ import annotations
+
 import os
 import sys
 
@@ -26,11 +28,13 @@ class ChatterboxWorker(BaseWorker):
 
     def load_model(self):
         import torch
+
         self._multilingual = True
         try:
             from chatterbox.mtl_tts import ChatterboxMultilingualTTS as CB
         except Exception:
             from chatterbox.tts import ChatterboxTTS as CB
+
             self._multilingual = False
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self._model = CB.from_pretrained(device=device)
@@ -53,21 +57,22 @@ class ChatterboxWorker(BaseWorker):
                 tgt = getattr(self._model.t3, "_step_compilation_target", None)
                 if tgt is not None:
                     self._model.t3._step_compilation_target = torch.compile(
-                        tgt, fullgraph=True, backend="cudagraphs")
+                        tgt, fullgraph=True, backend="cudagraphs"
+                    )
                     print("[chatterbox] torch.compile enabled (cudagraphs).", flush=True)
             except Exception as e:
-                print(f"[chatterbox] torch.compile skipped ({e}); running uncompiled.",
-                      flush=True)
+                print(f"[chatterbox] torch.compile skipped ({e}); running uncompiled.", flush=True)
 
     def synthesize(self, req: GenRequest) -> float:
         import torchaudio as ta
+
         p = req.preset or {}
-        kw = dict(
-            exaggeration=p.get("exaggeration", 0.5),
-            cfg_weight=p.get("cfg_weight", 0.5),
-            temperature=p.get("temperature", 0.8),
-            repetition_penalty=p.get("repetition_penalty", 2.0),
-        )
+        kw = {
+            "exaggeration": p.get("exaggeration", 0.5),
+            "cfg_weight": p.get("cfg_weight", 0.5),
+            "temperature": p.get("temperature", 0.8),
+            "repetition_penalty": p.get("repetition_penalty", 2.0),
+        }
         if getattr(self, "_multilingual", False):
             kw["language_id"] = req.language or "en"
         if req.reference_wav:

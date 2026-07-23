@@ -7,7 +7,10 @@ import pytest
 
 from chatterbox_manga_studio.services.events import EventBus, EventType
 from chatterbox_manga_studio.services.job_scheduler import JobScheduler, JobStatus
-from chatterbox_manga_studio.services.storage_manager import StorageManager, create_filesystem_stores
+from chatterbox_manga_studio.services.storage_manager import (
+    StorageManager,
+    create_filesystem_stores,
+)
 
 
 @pytest.fixture
@@ -55,7 +58,7 @@ async def test_job_scheduler_pause_resume_cancel(scheduler):
 @pytest.mark.asyncio
 async def test_job_scheduler_failure_retries_then_fails(scheduler):
     sched, _ = scheduler
-    job = await sched.create_job("demo", max_attempts=2)
+    await sched.create_job("demo", max_attempts=2)
     claimed = await sched.claim_next_job()
     retried = await sched.fail_job(claimed.id, "temporary", retry=True)
     assert retried.status == JobStatus.QUEUED

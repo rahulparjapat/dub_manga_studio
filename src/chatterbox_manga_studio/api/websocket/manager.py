@@ -1,4 +1,5 @@
 """WebSocket connection manager backed by the EventBus."""
+
 from __future__ import annotations
 
 import asyncio

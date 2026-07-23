@@ -1,5 +1,7 @@
 """SRT writing / parsing / retiming (times rewritten after final timeline)."""
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 
@@ -68,6 +70,5 @@ def retime_from_timeline(texts: dict[int, str], timeline) -> list[SubCue]:
         txt = texts.get(seg.cue_idx, "")
         if not txt:
             continue
-        out.append(SubCue(seg.cue_idx, seg.out_start,
-                          seg.out_start + seg.out_duration, txt))
+        out.append(SubCue(seg.cue_idx, seg.out_start, seg.out_start + seg.out_duration, txt))
     return out

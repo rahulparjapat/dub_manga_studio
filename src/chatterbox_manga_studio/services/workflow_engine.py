@@ -4,6 +4,7 @@ The engine is deliberately domain-neutral: it knows nodes, dependencies,
 retries, cancellation, progress, checkpoints, and events. Manga/dubbing logic
 belongs in node handlers registered by higher layers.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -69,7 +70,7 @@ class WorkflowDefinition(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_graph(self) -> "WorkflowDefinition":
+    def validate_graph(self) -> WorkflowDefinition:
         ids = [node.id for node in self.nodes]
         duplicate_ids = {node_id for node_id in ids if ids.count(node_id) > 1}
         if duplicate_ids:
@@ -136,7 +137,7 @@ class WorkflowContext:
 
     def __init__(
         self,
-        engine: "WorkflowEngine",
+        engine: WorkflowEngine,
         run: WorkflowRun,
         node: WorkflowNode,
         cancel_event: asyncio.Event,
@@ -235,7 +236,11 @@ class WorkflowEngine:
         """Resume or start a workflow run, skipping completed nodes."""
 
         run = await self.require_run(run_id)
-        if run.status in {WorkflowStatus.COMPLETED, WorkflowStatus.CANCELLED, WorkflowStatus.FAILED}:
+        if run.status in {
+            WorkflowStatus.COMPLETED,
+            WorkflowStatus.CANCELLED,
+            WorkflowStatus.FAILED,
+        }:
             return run
         run.status = WorkflowStatus.RUNNING
         run.started_at = run.started_at or datetime.now(UTC)
@@ -287,11 +292,7 @@ class WorkflowEngine:
                 return
 
             terminal_failure = next(
-                (
-                    state
-                    for state in run.node_states.values()
-                    if state.status == NodeStatus.FAILED
-                ),
+                (state for state in run.node_states.values() if state.status == NodeStatus.FAILED),
                 None,
             )
             if terminal_failure is not None:
@@ -331,7 +332,9 @@ class WorkflowEngine:
             state = run.node_states[node.id]
             if state.status != NodeStatus.PENDING:
                 continue
-            if all(run.node_states[dep].status == NodeStatus.COMPLETED for dep in node.dependencies):
+            if all(
+                run.node_states[dep].status == NodeStatus.COMPLETED for dep in node.dependencies
+            ):
                 ready.append(nodes_by_id[node.id])
         return ready
 
@@ -360,7 +363,9 @@ class WorkflowEngine:
                 await context.raise_if_cancelled()
                 result_or_awaitable = handler(context)
                 if node.timeout_seconds is not None:
-                    result = await asyncio.wait_for(_ensure_awaitable(result_or_awaitable), node.timeout_seconds)
+                    result = await asyncio.wait_for(
+                        _ensure_awaitable(result_or_awaitable), node.timeout_seconds
+                    )
                 else:
                     result = await _ensure_awaitable(result_or_awaitable)
                 run = await self.require_run(run.id)
@@ -392,7 +397,12 @@ class WorkflowEngine:
                     await self.event_bus.publish(
                         EventType.NODE_RETRYING,
                         source="WorkflowEngine",
-                        payload={"run_id": run.id, "node_id": node.id, "error": str(exc), "attempt": state.attempts},
+                        payload={
+                            "run_id": run.id,
+                            "node_id": node.id,
+                            "error": str(exc),
+                            "attempt": state.attempts,
+                        },
                         correlation_id=run.id,
                     )
                     await self._save_run(run)
@@ -450,18 +460,31 @@ class WorkflowEngine:
     async def load_checkpoint(self, run_id: str, node_id: str) -> Any:
         return await self.storage.get_kv(self._checkpoint_key(run_id, node_id))
 
-    async def update_node_progress(self, run_id: str, node_id: str, progress: float, *, message: str | None = None) -> None:
+    async def update_node_progress(
+        self, run_id: str, node_id: str, progress: float, *, message: str | None = None
+    ) -> None:
         run = await self.require_run(run_id)
         state = run.node_states[node_id]
         state.progress = min(1.0, max(0.0, progress))
-        completed = sum(1 for state in run.node_states.values() if state.status == NodeStatus.COMPLETED)
-        current = sum(state.progress for state in run.node_states.values() if state.status == NodeStatus.RUNNING)
+        completed = sum(
+            1 for state in run.node_states.values() if state.status == NodeStatus.COMPLETED
+        )
+        current = sum(
+            state.progress
+            for state in run.node_states.values()
+            if state.status == NodeStatus.RUNNING
+        )
         run.progress = min(1.0, (completed + current) / max(1, len(run.node_states)))
         await self._save_run(run)
         await self.event_bus.publish(
             EventType.NODE_STARTED,
             source="WorkflowEngine",
-            payload={"run_id": run_id, "node_id": node_id, "progress": state.progress, "message": message},
+            payload={
+                "run_id": run_id,
+                "node_id": node_id,
+                "progress": state.progress,
+                "message": message,
+            },
             correlation_id=run_id,
         )
 

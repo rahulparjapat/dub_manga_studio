@@ -1,8 +1,11 @@
 """Provider API key storage — local provider_keys.json, no login (by design)."""
+
 from __future__ import annotations
+
 import json
-from .paths import PROVIDER_KEYS
+
 from .logging_util import get_logger
+from .paths import PROVIDER_KEYS
 
 log = get_logger("keys")
 
@@ -15,7 +18,7 @@ def load_keys() -> dict:
             return json.loads(PROVIDER_KEYS.read_text(encoding="utf-8"))
         except Exception as e:
             log.warning("Could not read provider_keys.json: %s", e)
-    return {p: "" for p in PROVIDERS}
+    return dict.fromkeys(PROVIDERS, "")
 
 
 def save_key(provider: str, key: str) -> str:

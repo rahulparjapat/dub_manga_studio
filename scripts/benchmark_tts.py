@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Benchmark a dubbing model on real Hinglish lines via its worker (RTF)."""
-import argparse, sys, time
+
+import argparse
+import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from chatterbox_manga_studio.dubbing.router import get_router  # noqa: E402
-from chatterbox_manga_studio.dubbing.workers.protocol import GenRequest, TARGET_LANG  # noqa
+from chatterbox_manga_studio.dubbing.workers.protocol import TARGET_LANG, GenRequest  # noqa
 
 LINES = {
     "hinglish_devanagari": [
@@ -30,12 +33,20 @@ def main():
     ap.add_argument("--ref-text", default=None)
     a = ap.parse_args()
     lines = LINES.get(a.target, LINES["english"])
-    outdir = ROOT / "data" / "output" / "bench"; outdir.mkdir(parents=True, exist_ok=True)
+    outdir = ROOT / "data" / "output" / "bench"
+    outdir.mkdir(parents=True, exist_ok=True)
     reqs = []
     for i, ln in enumerate(lines):
-        reqs.append(GenRequest(text=ln, out_path=str(outdir / f"b_{i}.wav"),
-                               target=a.target, language=TARGET_LANG.get(a.target, "en"),
-                               reference_wav=a.ref, reference_text=a.ref_text).to_json())
+        reqs.append(
+            GenRequest(
+                text=ln,
+                out_path=str(outdir / f"b_{i}.wav"),
+                target=a.target,
+                language=TARGET_LANG.get(a.target, "en"),
+                reference_wav=a.ref,
+                reference_text=a.ref_text,
+            ).to_json()
+        )
     t0 = time.time()
     res = get_router().generate_batch(a.model, reqs)
     dt = time.time() - t0

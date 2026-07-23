@@ -1,7 +1,10 @@
 """Automatic glossary / name-consistency store. First mapping is retained."""
+
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 from ..common.paths import edition_dir
 
 CATEGORIES = ["characters", "powers", "realms", "clans", "systems", "locations"]
@@ -26,8 +29,9 @@ def merge(project_id: str, target: str, new: dict) -> dict:
     for cat in CATEGORIES:
         g.setdefault(cat, {})
         for src, tgt in (new.get(cat) or {}).items():
-            if src not in g[cat]:      # retain first mapping
+            if src not in g[cat]:  # retain first mapping
                 g[cat][src] = tgt
     _path(project_id, target).write_text(
-        json.dumps(g, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(g, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return g

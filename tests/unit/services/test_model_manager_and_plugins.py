@@ -5,9 +5,21 @@ from pathlib import Path
 
 import pytest
 
-from chatterbox_manga_studio.services.model_manager import ModelManager, ModelSelectionCriteria, ModelStatus, NoopModelRuntime
-from chatterbox_manga_studio.services.plugin_registry import ExistingWorkerPlugin, PluginRegistry, WorkerPluginConfig
-from chatterbox_manga_studio.services.storage_manager import StorageManager, create_filesystem_stores
+from chatterbox_manga_studio.services.model_manager import (
+    ModelManager,
+    ModelSelectionCriteria,
+    ModelStatus,
+    NoopModelRuntime,
+)
+from chatterbox_manga_studio.services.plugin_registry import (
+    ExistingWorkerPlugin,
+    PluginRegistry,
+    WorkerPluginConfig,
+)
+from chatterbox_manga_studio.services.storage_manager import (
+    StorageManager,
+    create_filesystem_stores,
+)
 
 
 @pytest.fixture
@@ -54,7 +66,9 @@ async def model_manager():
 
 @pytest.mark.asyncio
 async def test_model_manager_selects_by_capabilities_not_names(model_manager):
-    selected = model_manager.select_models(ModelSelectionCriteria(language="hi", supports_voice_clone=True))
+    selected = model_manager.select_models(
+        ModelSelectionCriteria(language="hi", supports_voice_clone=True)
+    )
     assert [cap.model_id for cap in selected] == ["clone_model"]
     assert selected[0].supports_reference_audio is True
 

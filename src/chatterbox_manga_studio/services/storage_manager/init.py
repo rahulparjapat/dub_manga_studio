@@ -1,4 +1,5 @@
 """StorageManager factory functions."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,4 +56,6 @@ async def create_storage_manager_from_env(*, event_bus: EventBus | None = None) 
         "default_lock_store": os.getenv("CMS_DEFAULT_LOCK_STORE", "filesystem"),
     }
     root_env = os.getenv("CMS_STORAGE_ROOT")
-    return await create_storage_manager(config, Path(root_env) if root_env else None, event_bus=event_bus)
+    return await create_storage_manager(
+        config, Path(root_env) if root_env else None, event_bus=event_bus
+    )

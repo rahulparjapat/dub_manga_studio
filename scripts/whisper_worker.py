@@ -25,6 +25,7 @@ dub is never blocked — but we make that fallback LOUD (never silent) so a 400s
 "why is it slow" mystery can't happen: the worker prints the exact reason it left
 the GPU and the JSON result carries device/compute/reason back to the app.
 """
+
 import json
 import os
 import shutil
@@ -62,11 +63,13 @@ def _add_nvidia_libs_to_path():
     have = set(current.split(os.pathsep)) if current else set()
     missing = [d for d in added if d not in have]
     if missing and os.environ.get("CMS_WHISPER_REEXEC") != "1":
-        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(
-            added + ([current] if current else []))
+        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(added + ([current] if current else []))
         os.environ["CMS_WHISPER_REEXEC"] = "1"
-        print(f"[whisper] setting LD_LIBRARY_PATH for CUDA libs and re-exec'ing "
-              f"so the loader finds libcublas.so.12 ({len(added)} dirs)", flush=True)
+        print(
+            f"[whisper] setting LD_LIBRARY_PATH for CUDA libs and re-exec'ing "
+            f"so the loader finds libcublas.so.12 ({len(added)} dirs)",
+            flush=True,
+        )
         # re-exec THIS process with the same args so LD_LIBRARY_PATH is honored
         os.execv(sys.executable, [sys.executable] + sys.argv)
     # already set (post-reexec) — just make sure env reflects it
@@ -75,8 +78,9 @@ def _add_nvidia_libs_to_path():
 
 
 def lang_arg(s):
-    return {"Auto": None, "Mandarin": "zh", "Cantonese": "yue",
-            "Other Chinese dialect": "zh"}.get(s)
+    return {"Auto": None, "Mandarin": "zh", "Cantonese": "yue", "Other Chinese dialect": "zh"}.get(
+        s
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +96,7 @@ def _ffmpeg_bin():
         return ff, fp
     try:
         import imageio_ffmpeg
+
         return imageio_ffmpeg.get_ffmpeg_exe(), fp
     except Exception:
         return None, fp
@@ -105,18 +110,37 @@ def probe_source(video, log=print):
     helpful error instead of a confusing empty transcript.
     """
     _, fp = _ffmpeg_bin()
-    meta = {"has_audio": None, "duration_s": None, "width": None, "height": None,
-            "video_codec": None, "audio_codec": None, "fps": None}
+    meta = {
+        "has_audio": None,
+        "duration_s": None,
+        "width": None,
+        "height": None,
+        "video_codec": None,
+        "audio_codec": None,
+        "fps": None,
+    }
     if not fp:
-        log("[whisper] ffprobe not found — skipping validation (will still try to "
-            "extract audio; a missing audio stream would then fail at extraction).")
+        log(
+            "[whisper] ffprobe not found — skipping validation (will still try to "
+            "extract audio; a missing audio stream would then fail at extraction)."
+        )
         return meta
     try:
         out = subprocess.check_output(
-            [fp, "-v", "error", "-show_entries",
-             "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate",
-             "-of", "json", str(video)],
-            text=True, stderr=subprocess.STDOUT, timeout=60)
+            [
+                fp,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate",
+                "-of",
+                "json",
+                str(video),
+            ],
+            text=True,
+            stderr=subprocess.STDOUT,
+            timeout=60,
+        )
         data = json.loads(out)
         fmt = data.get("format", {})
         try:
@@ -146,10 +170,13 @@ def probe_source(video, log=print):
     if meta["has_audio"] is False:
         raise RuntimeError(
             "The source video has NO audio stream — there is nothing to "
-            "transcribe. Re-export the video WITH audio and try again.")
-    log(f"[whisper] source: dur={meta['duration_s']}s "
+            "transcribe. Re-export the video WITH audio and try again."
+        )
+    log(
+        f"[whisper] source: dur={meta['duration_s']}s "
         f"{meta['width']}x{meta['height']} v={meta['video_codec']} "
-        f"a={meta['audio_codec']} fps={meta['fps']} has_audio={meta['has_audio']}")
+        f"a={meta['audio_codec']} fps={meta['fps']} has_audio={meta['has_audio']}"
+    )
     return meta
 
 
@@ -162,8 +189,10 @@ def extract_audio_16k(video, out_dir, log=print):
     """
     ff, _ = _ffmpeg_bin()
     if not ff:
-        log("[whisper] WARNING: ffmpeg not found — transcribing the RAW video "
-            "directly (slower). Install ffmpeg for the fast path.")
+        log(
+            "[whisper] WARNING: ffmpeg not found — transcribing the RAW video "
+            "directly (slower). Install ffmpeg for the fast path."
+        )
         return str(video)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -182,16 +211,30 @@ def extract_audio_16k(video, out_dir, log=print):
     except Exception:
         pass
     t0 = time.time()
-    cmd = [ff, "-y", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000",
-           "-acodec", "pcm_s16le", str(wav)]
+    cmd = [
+        ff,
+        "-y",
+        "-i",
+        str(video),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-acodec",
+        "pcm_s16le",
+        str(wav),
+    ]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if proc.returncode != 0 or not wav.exists() or wav.stat().st_size < 1024:
         tail = "\n".join((proc.stdout or "").strip().splitlines()[-8:])
         log(f"[whisper] audio extraction failed; using raw video. ffmpeg said:\n{tail}")
         return str(video)
     mb = wav.stat().st_size / 1e6
-    log(f"[whisper] extracted 16 kHz mono WAV ({mb:.1f} MB) in {time.time()-t0:.1f}s "
-        f"-> {wav.name} (fast path)")
+    log(
+        f"[whisper] extracted 16 kHz mono WAV ({mb:.1f} MB) in {time.time()-t0:.1f}s "
+        f"-> {wav.name} (fast path)"
+    )
     return str(wav)
 
 
@@ -209,7 +252,9 @@ def dedupe_overlapping_segments(seg):
         if out:
             prev = out[-1]
             prev_text = "".join((prev.get("text") or "").split())
-            overlap = min(float(prev.get("end", 0)), float(s.get("end", 0))) - max(float(prev.get("start", 0)), float(s.get("start", 0)))
+            overlap = min(float(prev.get("end", 0)), float(s.get("end", 0))) - max(
+                float(prev.get("start", 0)), float(s.get("start", 0))
+            )
             if text and text == prev_text and overlap > 0:
                 dropped += 1
                 continue
@@ -217,8 +262,7 @@ def dedupe_overlapping_segments(seg):
     return out, dropped
 
 
-def merge_segments_pause_aware(seg, target_s=25.0, flex=0.40, pause_gap=0.25,
-                               max_chars=280):
+def merge_segments_pause_aware(seg, target_s=25.0, flex=0.40, pause_gap=0.25, max_chars=280):
     """Pause-aware cue building: aim for ~target_s per cue, but END each cue at
     the nearest NATURAL PAUSE so narration/speech flow never breaks mid-sentence.
 
@@ -243,12 +287,19 @@ def merge_segments_pause_aware(seg, target_s=25.0, flex=0.40, pause_gap=0.25,
         for w in s.get("words", []):
             if w.get("start") is None or w.get("end") is None:
                 continue
-            words.append({"start": float(w["start"]), "end": float(w["end"]),
-                          "word": w.get("word", ""), "seg": si})
+            words.append(
+                {
+                    "start": float(w["start"]),
+                    "end": float(w["end"]),
+                    "word": w.get("word", ""),
+                    "seg": si,
+                }
+            )
     if not words:
         # no word timings available -> deterministic time merge (never crash)
-        return merge_segments(seg, target_s=target_s,
-                              max_s=target_s * (1 + flex), max_chars=max_chars)
+        return merge_segments(
+            seg, target_s=target_s, max_s=target_s * (1 + flex), max_chars=max_chars
+        )
 
     low = target_s * (1.0 - flex)
     high = target_s * (1.0 + flex)
@@ -267,11 +318,11 @@ def merge_segments_pause_aware(seg, target_s=25.0, flex=0.40, pause_gap=0.25,
         cur_chars = sum(len(x["word"]) for x in cur["words"])
         cut = False
         if dur >= low and gap >= pause_gap:
-            cut = True                      # natural pause inside the window -> cut
+            cut = True  # natural pause inside the window -> cut
         elif dur >= high:
-            cut = True                      # ceiling reached, cut regardless
+            cut = True  # ceiling reached, cut regardless
         elif cur_chars >= max_chars and gap >= pause_gap * 0.5:
-            cut = True                      # very long text, cut at any small gap
+            cut = True  # very long text, cut at any small gap
         if cut and nxt is not None:
             cues.append(cur)
             cur = None
@@ -285,13 +336,19 @@ def merge_segments_pause_aware(seg, target_s=25.0, flex=0.40, pause_gap=0.25,
     for cid, c in enumerate(cues):
         text = "".join(w["word"] for w in c["words"]).strip()
         if not text:
-            text = "".join(seg[si]["text"].strip() for si in
-                           {w["seg"] for w in c["words"]}).strip()
-        out.append({"id": cid, "start": round(c["start"], 3),
-                    "end": round(c["end"], 3), "text": text,
-                    "words": [{"start": round(w["start"], 3),
-                               "end": round(w["end"], 3), "word": w["word"]}
-                              for w in c["words"]]})
+            text = "".join(seg[si]["text"].strip() for si in {w["seg"] for w in c["words"]}).strip()
+        out.append(
+            {
+                "id": cid,
+                "start": round(c["start"], 3),
+                "end": round(c["end"], 3),
+                "text": text,
+                "words": [
+                    {"start": round(w["start"], 3), "end": round(w["end"], 3), "word": w["word"]}
+                    for w in c["words"]
+                ],
+            }
+        )
     return out
 
 
@@ -306,8 +363,13 @@ def merge_segments(seg, target_s=25.0, max_s=30.0, max_chars=200):
     cur = None
     for s in seg:
         if cur is None:
-            cur = {"id": 0, "start": s["start"], "end": s["end"],
-                   "text": s["text"], "words": list(s.get("words", []))}
+            cur = {
+                "id": 0,
+                "start": s["start"],
+                "end": s["end"],
+                "text": s["text"],
+                "words": list(s.get("words", [])),
+            }
             continue
         dur = s["end"] - cur["start"]
         chars = len(cur["text"]) + 1 + len(s["text"])
@@ -318,8 +380,13 @@ def merge_segments(seg, target_s=25.0, max_s=30.0, max_chars=200):
             cur["words"].extend(s.get("words", []))
         else:
             merged.append(cur)
-            cur = {"id": len(merged), "start": s["start"], "end": s["end"],
-                   "text": s["text"], "words": list(s.get("words", []))}
+            cur = {
+                "id": len(merged),
+                "start": s["start"],
+                "end": s["end"],
+                "text": s["text"],
+                "words": list(s.get("words", [])),
+            }
     if cur is not None:
         cur["id"] = len(merged)
         merged.append(cur)
@@ -328,6 +395,7 @@ def merge_segments(seg, target_s=25.0, max_s=30.0, max_chars=200):
 
 def _load_model(model_name, device, compute_type):
     from faster_whisper import WhisperModel
+
     return WhisperModel(model_name, device=device, compute_type=compute_type)
 
 
@@ -341,7 +409,7 @@ def _transcribe(model, audio, args, lang, vad, wts, batch_size, log=print):
     mystery. Batched VAD handles chunking internally, so we don't also pass a
     conflicting vad_parameters dict to the batched pipeline.
     """
-    chunk_len = int(args.get("max_speech_s", 30))       # target cue length (s)
+    chunk_len = int(args.get("max_speech_s", 30))  # target cue length (s)
     t0 = time.time()
 
     if batch_size and batch_size > 1:
@@ -352,32 +420,45 @@ def _transcribe(model, audio, args, lang, vad, wts, batch_size, log=print):
         else:
             pipe = None
             for kwargs in (
-                dict(use_vad_model=True, chunk_length=chunk_len),
-                dict(chunk_length=chunk_len),
-                dict(use_vad_model=True),
-                dict(),
+                {"use_vad_model": True, "chunk_length": chunk_len},
+                {"chunk_length": chunk_len},
+                {"use_vad_model": True},
+                {},
             ):
                 try:
                     pipe = BatchedInferencePipeline(model=model, **kwargs)
-                    log(f"[whisper] batched pipeline OK (args={list(kwargs)}), "
-                        f"batch_size={batch_size}, chunk_length={chunk_len}")
+                    log(
+                        f"[whisper] batched pipeline OK (args={list(kwargs)}), "
+                        f"batch_size={batch_size}, chunk_length={chunk_len}"
+                    )
                     break
                 except TypeError:
                     continue
             if pipe is not None:
                 seg, info = pipe.transcribe(
-                    audio, batch_size=batch_size, language=lang,
-                    word_timestamps=wts, beam_size=args.get("beam_size", 5),
-                    condition_on_previous_text=True)
+                    audio,
+                    batch_size=batch_size,
+                    language=lang,
+                    word_timestamps=wts,
+                    beam_size=args.get("beam_size", 5),
+                    condition_on_previous_text=True,
+                )
                 log(f"[whisper] batched transcribe returned in {time.time()-t0:.1f}s")
                 return seg, info
 
     # Sequential fallback (also honors chunk_length + tuned VAD where supported).
-    vad_params = {"min_silence_duration_ms": args.get("min_silence_ms", 1200),
-                  "max_speech_duration_s": chunk_len}
-    common = dict(language=lang, vad_filter=vad, vad_parameters=vad_params,
-                  word_timestamps=wts, beam_size=args.get("beam_size", 5),
-                  condition_on_previous_text=True)
+    vad_params = {
+        "min_silence_duration_ms": args.get("min_silence_ms", 1200),
+        "max_speech_duration_s": chunk_len,
+    }
+    common = {
+        "language": lang,
+        "vad_filter": vad,
+        "vad_parameters": vad_params,
+        "word_timestamps": wts,
+        "beam_size": args.get("beam_size", 5),
+        "condition_on_previous_text": True,
+    }
     log("[whisper] using SEQUENTIAL transcribe (slower)")
     try:
         seg, info = model.transcribe(audio, chunk_length=chunk_len, **common)
@@ -411,12 +492,20 @@ def _load_and_transcribe(args, log, preloaded=None):
 
     def _finish(seg_iter, info, device, compute, bs):
         seg = []
-        for s in seg_iter:                # iteration triggers real work
-            sw = [{"start": round(w.start, 3), "end": round(w.end, 3),
-                   "word": w.word} for w in (s.words or [])]
-            seg.append({"id": s.id, "start": round(s.start, 3),
-                        "end": round(s.end, 3), "text": s.text.strip(),
-                        "words": sw})
+        for s in seg_iter:  # iteration triggers real work
+            sw = [
+                {"start": round(w.start, 3), "end": round(w.end, 3), "word": w.word}
+                for w in (s.words or [])
+            ]
+            seg.append(
+                {
+                    "id": s.id,
+                    "start": round(s.start, 3),
+                    "end": round(s.end, 3),
+                    "text": s.text.strip(),
+                    "words": sw,
+                }
+            )
         raw_n = len(seg)
         seg, duplicate_n = dedupe_overlapping_segments(seg)
         if duplicate_n:
@@ -427,32 +516,57 @@ def _load_and_transcribe(args, log, preloaded=None):
         target = float(args.get("max_speech_s", 25))
         flex = float(args.get("chunk_flex", 0.40))
         pause_gap = float(args.get("pause_gap_s", 0.25))
-        seg = merge_segments_pause_aware(seg, target_s=target, flex=flex,
-                                         pause_gap=pause_gap)
-        log(f"[whisper] pause-aware merge {raw_n} raw segments -> {len(seg)} cues "
-            f"(~{target:.0f}s target, snap to pauses within \u00b1{flex*100:.0f}%)")
+        seg = merge_segments_pause_aware(seg, target_s=target, flex=flex, pause_gap=pause_gap)
+        log(
+            f"[whisper] pause-aware merge {raw_n} raw segments -> {len(seg)} cues "
+            f"(~{target:.0f}s target, snap to pauses within \u00b1{flex*100:.0f}%)"
+        )
         words = [w for s in seg for w in s.get("words", [])]
-        out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
-        seg_clean = [{"id": s["id"], "start": s["start"], "end": s["end"],
-                      "text": s["text"]} for s in seg]
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        seg_clean = [
+            {"id": s["id"], "start": s["start"], "end": s["end"], "text": s["text"]} for s in seg
+        ]
         (out / "transcript.json").write_text(
-            json.dumps(seg_clean, indent=2, ensure_ascii=False), encoding="utf-8")
+            json.dumps(seg_clean, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         (out / "transcript.txt").write_text(
-            "\n".join(s["text"] for s in seg_clean), encoding="utf-8")
+            "\n".join(s["text"] for s in seg_clean), encoding="utf-8"
+        )
         (out / "words.json").write_text(
-            json.dumps(words, indent=2, ensure_ascii=False), encoding="utf-8")
+            json.dumps(words, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         detected = getattr(info, "language", lang)
         lang_prob = getattr(info, "language_probability", None)
-        (out / "transcript_meta.json").write_text(json.dumps({
-            "detected_language": detected, "language_probability": lang_prob,
-            "forced_language": lang, "device": device, "compute_type": compute,
-            "batch_size_used": bs, "cues": len(seg), **meta,
-        }, indent=2, ensure_ascii=False), encoding="utf-8")
-        return {"ok": True, "segments": len(seg), "language": detected,
-                "language_probability": lang_prob, "device": device,
-                "compute_type": compute, "batch_size_used": bs,
-                "duration_s": meta.get("duration_s"),
-                "width": meta.get("width"), "height": meta.get("height")}
+        (out / "transcript_meta.json").write_text(
+            json.dumps(
+                {
+                    "detected_language": detected,
+                    "language_probability": lang_prob,
+                    "forced_language": lang,
+                    "device": device,
+                    "compute_type": compute,
+                    "batch_size_used": bs,
+                    "cues": len(seg),
+                    **meta,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "ok": True,
+            "segments": len(seg),
+            "language": detected,
+            "language_probability": lang_prob,
+            "device": device,
+            "compute_type": compute,
+            "batch_size_used": bs,
+            "duration_s": meta.get("duration_s"),
+            "width": meta.get("width"),
+            "height": meta.get("height"),
+        }
 
     # ---- Fast path: a resident/warm model was handed in — transcribe directly ----
     if preloaded is not None:
@@ -480,12 +594,16 @@ def _load_and_transcribe(args, log, preloaded=None):
             log(f"[whisper] model loaded on device={device} compute={compute}")
             if device == "cpu":
                 log("[whisper] ================= RUNNING ON CPU =================")
-                log("[whisper] GPU was NOT used — transcription will be SLOW "
-                    "(minutes per minute of audio).")
+                log(
+                    "[whisper] GPU was NOT used — transcription will be SLOW "
+                    "(minutes per minute of audio)."
+                )
                 if gpu_fail_reason:
                     log(f"[whisper] Reason GPU was skipped: {gpu_fail_reason}")
-                log("[whisper] FIX: workers_envs/whisper/bin/pip install "
-                    "nvidia-cublas-cu12 'nvidia-cudnn-cu12>=9,<10'")
+                log(
+                    "[whisper] FIX: workers_envs/whisper/bin/pip install "
+                    "nvidia-cublas-cu12 'nvidia-cudnn-cu12>=9,<10'"
+                )
                 log("[whisper] ===================================================")
         except Exception as e:
             last_err = str(e)
@@ -509,24 +627,34 @@ def _load_and_transcribe(args, log, preloaded=None):
                     gpu_fail_reason = f"transcribe bs={bs}: {last_err}"
                 break
 
-    return {"ok": False,
-            "error": (f"Transcription failed on GPU and CPU. Last error: "
-                      f"{last_err}. If this is a cuBLAS/cuDNN error, run: "
-                      f"workers_envs/whisper/bin/pip install "
-                      f"nvidia-cublas-cu12 'nvidia-cudnn-cu12>=9,<10'")}
+    return {
+        "ok": False,
+        "error": (
+            f"Transcription failed on GPU and CPU. Last error: "
+            f"{last_err}. If this is a cuBLAS/cuDNN error, run: "
+            f"workers_envs/whisper/bin/pip install "
+            f"nvidia-cublas-cu12 'nvidia-cudnn-cu12>=9,<10'"
+        ),
+    }
 
 
 def _load_model_gpu_first(model_name, ct, log):
     """Load the model preferring GPU precisions, falling back to CPU. Returns
     (model, device, compute) or (None, None, None). Used by server/warm mode."""
-    for device, compute in (("cuda", ct), ("cuda", "int8_float16"),
-                            ("cuda", "int8"), ("cpu", "int8")):
+    for device, compute in (
+        ("cuda", ct),
+        ("cuda", "int8_float16"),
+        ("cuda", "int8"),
+        ("cpu", "int8"),
+    ):
         try:
             m = _load_model(model_name, device, compute)
             log(f"[whisper] warm model loaded on device={device} compute={compute}")
             if device == "cpu":
-                log("[whisper] WARNING: warm model is on CPU (GPU unavailable) — "
-                    "transcription will be slow. See Live Logs for the reason.")
+                log(
+                    "[whisper] WARNING: warm model is on CPU (GPU unavailable) — "
+                    "transcription will be slow. See Live Logs for the reason."
+                )
             return m, device, compute
         except Exception as e:  # noqa: BLE001
             log(f"[whisper] warm load failed on {device}/{compute}: {e}")
@@ -545,8 +673,9 @@ def serve():
     The app kills this process (auto-release) right before TTS/dub loads a model
     so heavy models never OOM on the 16 GB T4.
     """
+
     def _log(m):
-        print(m, file=sys.stderr, flush=True)   # logs -> worker log; stdout = JSON only
+        print(m, file=sys.stderr, flush=True)  # logs -> worker log; stdout = JSON only
 
     _add_nvidia_libs_to_path()
     # Warm the model at startup so the FIRST transcribe is instant.
@@ -560,8 +689,12 @@ def serve():
     _log("[whisper] server mode: warming model on GPU…")
     model, device, compute = _load_model_gpu_first(model_name, ct, _log)
     # announce readiness on stdout so the app knows the GPU is warm
-    print(json.dumps({"ok": model is not None, "event": "ready",
-                      "device": device, "compute_type": compute}), flush=True)
+    print(
+        json.dumps(
+            {"ok": model is not None, "event": "ready", "device": device, "compute_type": compute}
+        ),
+        flush=True,
+    )
 
     for line in sys.stdin:
         line = line.strip()
@@ -574,8 +707,17 @@ def serve():
             continue
         cmd = req.get("cmd", "transcribe")
         if cmd == "ping":
-            print(json.dumps({"ok": True, "ready": model is not None,
-                              "device": device, "compute_type": compute}), flush=True)
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "ready": model is not None,
+                        "device": device,
+                        "compute_type": compute,
+                    }
+                ),
+                flush=True,
+            )
             continue
         if cmd == "shutdown":
             print(json.dumps({"ok": True, "bye": True}), flush=True)
@@ -586,6 +728,7 @@ def serve():
                 res = _load_and_transcribe(req, _log, preloaded=pre)
             except Exception as e:  # noqa: BLE001
                 import traceback
+
                 res = {"ok": False, "error": str(e), "trace": traceback.format_exc()}
             print(json.dumps(res), flush=True)
             continue
@@ -603,11 +746,10 @@ def main():
     _add_nvidia_libs_to_path()
 
     def _log(m):
-        print(m, flush=True)   # captured to the worker log (Live Logs tab)
+        print(m, flush=True)  # captured to the worker log (Live Logs tab)
 
     res = _load_and_transcribe(args, _log, preloaded=None)
     print(json.dumps(res))
-
 
 
 if __name__ == "__main__":

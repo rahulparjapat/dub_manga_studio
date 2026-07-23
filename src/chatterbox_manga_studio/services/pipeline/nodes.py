@@ -1,19 +1,19 @@
 """WorkflowEngine nodes wrapping existing Chatterbox Manga Studio business logic."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ...adapt import providers as legacy_providers
 from ...adapt import quality
 from ...common.config import default_model_for_target, load_config
-from ...common.logging_util import get_logger
 from ...common.paths import edition_dir, find_source_video, project_dir
 from ...dubbing import cleanup
-from ...dubbing.workers.protocol import GenRequest, TARGET_LANG
+from ...dubbing.workers.protocol import TARGET_LANG, GenRequest
 from ...export import exporter as EX
 from ...export import srt as SRT
 from ...export import timeline as TL
@@ -38,7 +38,9 @@ class IngestNode(PipelineNode):
         await ctx.raise_if_cancelled()
 
         if data.get("upload_tmp_path") and data.get("filename"):
-            path = await asyncio.to_thread(upload.store_uploaded, data["upload_tmp_path"], project_id, data["filename"])
+            path = await asyncio.to_thread(
+                upload.store_uploaded, data["upload_tmp_path"], project_id, data["filename"]
+            )
             message = "uploaded file stored"
         elif data.get("drive_url"):
             result = await asyncio.to_thread(upload.download_drive, data["drive_url"], project_id)
@@ -47,7 +49,9 @@ class IngestNode(PipelineNode):
             path = result["path"]
             message = "downloaded from drive"
         elif data.get("auto_input"):
-            result = await asyncio.to_thread(upload.auto_ingest_stable_input, project_id, data.get("min_stable_seconds", 6.0))
+            result = await asyncio.to_thread(
+                upload.auto_ingest_stable_input, project_id, data.get("min_stable_seconds", 6.0)
+            )
             if not result.get("ok"):
                 raise PipelineNodeError(result.get("message") or "auto ingest failed")
             path = result["path"]
@@ -105,7 +109,12 @@ class TranscribeNode(PipelineNode):
         if not result.get("ok"):
             raise PipelineNodeError(result.get("error") or "transcription failed")
         await ctx.update_progress(1.0, "transcription complete")
-        payload = {"project_id": project_id, "source_video": source_video, "transcript_dir": out_dir, "transcription": result}
+        payload = {
+            "project_id": project_id,
+            "source_video": source_video,
+            "transcript_dir": out_dir,
+            "transcription": result,
+        }
         transcript_json = Path(out_dir) / "transcript.json"
         if transcript_json.exists():
             payload["transcript_json"] = str(transcript_json)
@@ -126,11 +135,15 @@ class TranslationNode(PipelineNode):
 
         if data.get("adapted_lines"):
             lines = list(data["adapted_lines"])
-            return NodeExecutionResult(node=self.name, data={"lines": lines, "raw_text": "", "warnings": []})
+            return NodeExecutionResult(
+                node=self.name, data={"lines": lines, "raw_text": "", "warnings": []}
+            )
 
         cues = await _load_cues(ctx, data)
         expected = int(data.get("expected_count") or len(cues) or 0)
-        system_prompt = data.get("system_prompt", "Translate/adapt the cues. Return JSON with a cues array.")
+        system_prompt = data.get(
+            "system_prompt", "Translate/adapt the cues. Return JSON with a cues array."
+        )
         user_content = data.get("user_content") or quality.build_cue_payload(cues)
         provider = data.get("provider")
         model = data.get("provider_model") or data.get("model") or ""
@@ -139,15 +152,24 @@ class TranslationNode(PipelineNode):
             response = await self.services.providers.execute(
                 ProviderRequest(
                     operation="translation",
-                    payload={"system_prompt": system_prompt, "user_content": user_content, "model": model, "target": data.get("target")},
+                    payload={
+                        "system_prompt": system_prompt,
+                        "user_content": user_content,
+                        "model": model,
+                        "target": data.get("target"),
+                    },
                 )
             )
-            raw_text = response.result.get("text") if isinstance(response.result, dict) else str(response.result)
+            raw_text = str(
+                response.result.get("text")
+                if isinstance(response.result, dict)
+                else response.result
+            )
         else:
             if not provider:
                 raise PipelineNodeError("TranslationNode requires provider or adapted_lines")
             response = await asyncio.to_thread(
-                legacy_providers.adapt,
+                cast(Any, legacy_providers.adapt),
                 provider,
                 model,
                 system_prompt,
@@ -156,12 +178,17 @@ class TranslationNode(PipelineNode):
             )
             if not response.get("ok"):
                 raise PipelineNodeError(response.get("error") or "translation provider failed")
-            raw_text = response.get("text", "")
+            raw_text = str(response.get("text", ""))
 
-        lines, warnings = quality.parse_cue_response(raw_text, expected) if expected else ([raw_text], [])
+        lines, warnings = (
+            quality.parse_cue_response(raw_text, expected) if expected else ([raw_text], [])
+        )
         glossary = quality.extract_glossary_from_response(raw_text)
         await ctx.update_progress(1.0, "translation complete")
-        return NodeExecutionResult(node=self.name, data={"lines": lines, "raw_text": raw_text, "warnings": warnings, "glossary": glossary})
+        return NodeExecutionResult(
+            node=self.name,
+            data={"lines": lines, "raw_text": raw_text, "warnings": warnings, "glossary": glossary},
+        )
 
 
 class QualityNode(PipelineNode):
@@ -184,7 +211,7 @@ class QualityNode(PipelineNode):
         checks = quality.parse_backcheck(backcheck_text) if backcheck_text else []
         summary = quality.backcheck_summary(checks) if checks else ""
         warnings = list(translation.get("warnings") or [])
-        
+
         for item in duration:
             if isinstance(item, dict):
                 if not item.get("ok", True):
@@ -192,7 +219,16 @@ class QualityNode(PipelineNode):
             elif item:
                 warnings.append(str(item))
         await ctx.update_progress(1.0, "quality complete")
-        return NodeExecutionResult(node=self.name, data={"lines": lines, "duration_fit": duration, "backcheck": checks, "summary": summary}, warnings=warnings)
+        return NodeExecutionResult(
+            node=self.name,
+            data={
+                "lines": lines,
+                "duration_fit": duration,
+                "backcheck": checks,
+                "summary": summary,
+            },
+            warnings=warnings,
+        )
 
 
 class VoiceSelectionNode(PipelineNode):
@@ -244,10 +280,21 @@ class VoiceSelectionNode(PipelineNode):
                 warnings.append(msg)
 
         if self.services.workers is not None:
-            matches = await self.services.workers.match_workers(WorkerMatchCriteria(model_id=model_id, language=target))
+            matches = await self.services.workers.match_workers(
+                WorkerMatchCriteria(model_id=model_id, language=target)
+            )
             if matches:
                 warnings.append(f"matched {len(matches)} worker(s) for {model_id}")
-        return NodeExecutionResult(node=self.name, data={"target": target, "model_id": model_id, "reference_wav": reference_wav, "reference_text": reference_text}, warnings=warnings)
+        return NodeExecutionResult(
+            node=self.name,
+            data={
+                "target": target,
+                "model_id": model_id,
+                "reference_wav": reference_wav,
+                "reference_text": reference_text,
+            },
+            warnings=warnings,
+        )
 
 
 class TTSNode(PipelineNode):
@@ -266,7 +313,11 @@ class TTSNode(PipelineNode):
         lines = list(data.get("lines") or translation.get("lines") or [])
         if not lines:
             raise PipelineNodeError("TTSNode requires narration lines")
-        project_id = data.get("project_id") or voice.get("project_id") or _node_data(deps.get("ingest")).get("project_id")
+        project_id = (
+            data.get("project_id")
+            or voice.get("project_id")
+            or _node_data(deps.get("ingest")).get("project_id")
+        )
         target = data.get("target") or voice.get("target") or "english"
         model_id = data.get("model_id") or voice.get("model_id")
         if not project_id:
@@ -303,7 +354,9 @@ class TTSNode(PipelineNode):
 
             def _on_cue(i: int, result: dict[str, Any]) -> None:
                 progress = (i + 1) / max(1, len(reqs))
-                asyncio.run_coroutine_threadsafe(ctx.update_progress(progress, f"TTS cue {i + 1}"), loop)
+                asyncio.run_coroutine_threadsafe(
+                    ctx.update_progress(progress, f"TTS cue {i + 1}"), loop
+                )
 
             results = await asyncio.to_thread(
                 get_router().generate_stream,
@@ -321,9 +374,21 @@ class TTSNode(PipelineNode):
             )
         failures = [result for result in results if not result.get("ok")]
         if failures and not data.get("allow_partial", False):
-            raise PipelineNodeError(f"TTS failed for {len(failures)} cue(s): {failures[0].get('error')}")
+            raise PipelineNodeError(
+                f"TTS failed for {len(failures)} cue(s): {failures[0].get('error')}"
+            )
         raw_cues = [req["out_path"] for req in reqs]
-        return NodeExecutionResult(node=self.name, data={"project_id": project_id, "target": target, "model_id": model_id, "lines": lines, "raw_cues": raw_cues, "results": results})
+        return NodeExecutionResult(
+            node=self.name,
+            data={
+                "project_id": project_id,
+                "target": target,
+                "model_id": model_id,
+                "lines": lines,
+                "raw_cues": raw_cues,
+                "results": results,
+            },
+        )
 
 
 class AudioCleanupNode(PipelineNode):
@@ -359,9 +424,18 @@ class AudioCleanupNode(PipelineNode):
                     data.get("denoise_strength", 1.0),
                     data.get("speed", data.get("narrator_speed", 1.0)),
                 )
-            clean_paths.append(str(out)); durations.append(float(duration))
+            clean_paths.append(str(out))
+            durations.append(float(duration))
             await ctx.update_progress((i + 1) / len(raw_cues), f"cleaned cue {i + 1}")
-        return NodeExecutionResult(node=self.name, data={"project_id": project_id, "target": target, "clean_cues": clean_paths, "durations": durations})
+        return NodeExecutionResult(
+            node=self.name,
+            data={
+                "project_id": project_id,
+                "target": target,
+                "clean_cues": clean_paths,
+                "durations": durations,
+            },
+        )
 
 
 class RenderNode(PipelineNode):
@@ -376,18 +450,31 @@ class RenderNode(PipelineNode):
         cleanup_data = _node_data(deps.get("audio_cleanup"))
         translation = _node_data(deps.get("translation")) or await _result_for(ctx, "translation")
         tts = _node_data(deps.get("tts")) or await _result_for(ctx, "tts")
-        project_id = data.get("project_id") or cleanup_data.get("project_id") or tts.get("project_id")
+        project_id = (
+            data.get("project_id") or cleanup_data.get("project_id") or tts.get("project_id")
+        )
         target = data.get("target") or cleanup_data.get("target") or "english"
-        source_video = data.get("source_video") or _node_data(deps.get("ingest")).get("source_video")
+        source_video = data.get("source_video") or _node_data(deps.get("ingest")).get(
+            "source_video"
+        )
         if not source_video and project_id:
-            found = find_source_video(project_id); source_video = str(found) if found else None
+            found = find_source_video(project_id)
+            source_video = str(found) if found else None
         clean_cues = list(data.get("clean_cues") or cleanup_data.get("clean_cues") or [])
         durations = list(data.get("durations") or cleanup_data.get("durations") or [])
-        lines = list(data.get("lines") or translation.get("lines") or tts.get("lines") or cleanup_data.get("lines") or [])
+        lines = list(
+            data.get("lines")
+            or translation.get("lines")
+            or tts.get("lines")
+            or cleanup_data.get("lines")
+            or []
+        )
         transcript = await _load_cues(ctx, data)
         if not project_id or not source_video or not clean_cues:
             raise PipelineNodeError("RenderNode requires project_id, source_video and clean_cues")
-        cues = _build_timeline_cues(transcript, lines or [Path(path).stem for path in clean_cues], durations)
+        cues = _build_timeline_cues(
+            transcript, lines or [Path(path).stem for path in clean_cues], durations
+        )
         timing_mode = data.get("timing_mode", "Cue-Locked Audio Master Sync")
         timeline = TL.build_timeline(timing_mode, cues)
         outdir = edition_dir(project_id, target) / "exports" / data.get("export_version", "V1")
@@ -397,11 +484,39 @@ class RenderNode(PipelineNode):
         if data.get("dry_run"):
             silent.write_bytes(b"dry-run-video")
         else:
-            concat = await asyncio.to_thread(EX.build_segments_concat, source_video, timeline, outdir / "work", data.get("render_workers", 3), data.get("fast_copy", False))
+            concat = await asyncio.to_thread(
+                EX.build_segments_concat,
+                source_video,
+                timeline,
+                outdir / "work",
+                data.get("render_workers", 3),
+                data.get("fast_copy", False),
+            )
             await asyncio.to_thread(EX.concat_video, concat, silent, True)
         timeline_path = outdir / "timeline.json"
-        timeline_path.write_text(json.dumps(timeline.model_dump() if hasattr(timeline, "model_dump") else _timeline_to_dict(timeline), indent=2, ensure_ascii=False), encoding="utf-8")
-        return NodeExecutionResult(node=self.name, data={"project_id": project_id, "target": target, "silent_video": str(silent), "timeline": _timeline_to_dict(timeline), "timeline_path": str(timeline_path), "outdir": str(outdir)})
+        timeline_path.write_text(
+            json.dumps(
+                (
+                    timeline.model_dump()
+                    if hasattr(timeline, "model_dump")
+                    else _timeline_to_dict(timeline)
+                ),
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return NodeExecutionResult(
+            node=self.name,
+            data={
+                "project_id": project_id,
+                "target": target,
+                "silent_video": str(silent),
+                "timeline": _timeline_to_dict(timeline),
+                "timeline_path": str(timeline_path),
+                "outdir": str(outdir),
+            },
+        )
 
 
 class ExportNode(PipelineNode):
@@ -418,10 +533,17 @@ class ExportNode(PipelineNode):
         translation = _node_data(deps.get("translation")) or await _result_for(ctx, "translation")
         tts = _node_data(deps.get("tts")) or await _result_for(ctx, "tts")
         project_id = data.get("project_id") or render.get("project_id")
-        target = data.get("target") or render.get("target") or cleanup_data.get("target") or "english"
-        outdir = Path(render.get("outdir") or edition_dir(project_id, target) / "exports" / data.get("export_version", "V1"))
+        target = str(
+            data.get("target") or render.get("target") or cleanup_data.get("target") or "english"
+        )
+        outdir = Path(
+            render.get("outdir")
+            or edition_dir(str(project_id), target)
+            / "exports"
+            / str(data.get("export_version", "V1"))
+        )
         outdir.mkdir(parents=True, exist_ok=True)
-        silent = Path(data.get("silent_video") or render.get("silent_video"))
+        silent = Path(str(data.get("silent_video") or render.get("silent_video") or ""))
         clean_cues = list(data.get("clean_cues") or cleanup_data.get("clean_cues") or [])
         lines = list(data.get("lines") or translation.get("lines") or tts.get("lines") or [])
         final = outdir / data.get("final_name", "final.mp4")
@@ -437,16 +559,36 @@ class ExportNode(PipelineNode):
         script.write_text("\n".join(lines), encoding="utf-8")
         srt_path = None
         if data.get("captions") and render.get("timeline"):
-            subs = SRT.retime_from_timeline({i: line for i, line in enumerate(lines)}, _timeline_from_dict(render["timeline"]))
+            subs = SRT.retime_from_timeline(
+                dict(enumerate(lines)), _timeline_from_dict(render["timeline"])
+            )
             srt = outdir / "final.srt"
-            SRT.write_srt(subs, str(srt)); srt_path = str(srt)
+            SRT.write_srt(subs, str(srt))
+            srt_path = str(srt)
         quality_path = outdir / "quality.json"
-        report = {"project_id": project_id, "target": target, "cues": len(clean_cues), "final": str(final)}
+        report = {
+            "project_id": project_id,
+            "target": target,
+            "cues": len(clean_cues),
+            "final": str(final),
+        }
         quality_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-        return NodeExecutionResult(node=self.name, data={"project_id": project_id, "target": target, "final": str(final), "audio_master": str(audio_master), "script": str(script), "srt": srt_path, "quality": str(quality_path)})
+        return NodeExecutionResult(
+            node=self.name,
+            data={
+                "project_id": project_id,
+                "target": target,
+                "final": str(final),
+                "audio_master": str(audio_master),
+                "script": str(script),
+                "srt": srt_path,
+                "quality": str(quality_path),
+            },
+        )
 
 
 # ---- helpers ----
+
 
 async def _result_for(ctx: WorkflowContext, node_id: str) -> dict[str, Any]:
     run = await ctx.engine.require_run(ctx.run_id)
@@ -491,13 +633,20 @@ async def _load_cues(ctx: WorkflowContext, data: dict[str, Any]) -> list[dict[st
     return []
 
 
-def _build_timeline_cues(transcript: list[dict[str, Any]], lines: list[str], durations: list[float]) -> list[TL.Cue]:
+def _build_timeline_cues(
+    transcript: list[dict[str, Any]], lines: list[str], durations: list[float]
+) -> list[TL.Cue]:
     cues: list[TL.Cue] = []
     total = max(len(lines), len(durations), len(transcript))
     for i in range(total):
         seg = transcript[i] if i < len(transcript) else {"start": float(i), "end": float(i + 1)}
         text = lines[i] if i < len(lines) else str(seg.get("text", ""))
-        cue = TL.Cue(idx=i, src_start=float(seg.get("start", i)), src_end=float(seg.get("end", i + 1)), text=text)
+        cue = TL.Cue(
+            idx=i,
+            src_start=float(seg.get("start", i)),
+            src_end=float(seg.get("end", i + 1)),
+            text=text,
+        )
         if i < len(durations):
             cue.audio_seconds = float(durations[i])
         cues.append(cue)
@@ -507,7 +656,10 @@ def _build_timeline_cues(transcript: list[dict[str, Any]], lines: list[str], dur
 def _timeline_to_dict(timeline: Any) -> dict[str, Any]:
     return {
         "total_seconds": getattr(timeline, "total_seconds", 0),
-        "segments": [dict(segment.__dict__) if hasattr(segment, "__dict__") else dict(segment) for segment in getattr(timeline, "segments", [])],
+        "segments": [
+            dict(segment.__dict__) if hasattr(segment, "__dict__") else dict(segment)
+            for segment in getattr(timeline, "segments", [])
+        ],
     }
 
 
@@ -523,7 +675,9 @@ async def _write_audio_master(clean_cues: list[str], audio_master: Path) -> None
         import numpy as np
         import soundfile as sf
 
-        with sf.SoundFile(str(audio_master), mode="w", samplerate=48000, channels=1, subtype="PCM_16") as handle:
+        with sf.SoundFile(
+            str(audio_master), mode="w", samplerate=48000, channels=1, subtype="PCM_16"
+        ) as handle:
             for cue in clean_cues:
                 audio, _ = sf.read(cue)
                 handle.write(np.asarray(audio, dtype="float32"))

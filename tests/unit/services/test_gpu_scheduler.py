@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from chatterbox_manga_studio.services.gpu_scheduler import AllocationStatus, GPUDevice, GPUScheduler
+from chatterbox_manga_studio.services.gpu_scheduler import GPUDevice, GPUScheduler
 from chatterbox_manga_studio.services.plugin_registry import ModelCapabilities
 
 
 @pytest.mark.asyncio
 async def test_gpu_scheduler_allocates_marks_resident_and_releases():
-    scheduler = GPUScheduler([GPUDevice(gpu_id="0", label="GPU", total_vram_gb=16, reserve_vram_gb=2)])
+    scheduler = GPUScheduler(
+        [GPUDevice(gpu_id="0", label="GPU", total_vram_gb=16, reserve_vram_gb=2)]
+    )
     cap = ModelCapabilities(model_id="m", label="M", estimated_vram=4)
 
     allocation = await scheduler.allocate(cap)
@@ -21,7 +23,9 @@ async def test_gpu_scheduler_allocates_marks_resident_and_releases():
 
 @pytest.mark.asyncio
 async def test_gpu_scheduler_evicts_lru_resident_allocation():
-    scheduler = GPUScheduler([GPUDevice(gpu_id="0", label="GPU", total_vram_gb=10, reserve_vram_gb=0)])
+    scheduler = GPUScheduler(
+        [GPUDevice(gpu_id="0", label="GPU", total_vram_gb=10, reserve_vram_gb=0)]
+    )
     small = ModelCapabilities(model_id="small", label="Small", estimated_vram=4)
     large = ModelCapabilities(model_id="large", label="Large", estimated_vram=8)
 
@@ -36,10 +40,12 @@ async def test_gpu_scheduler_evicts_lru_resident_allocation():
 
 @pytest.mark.asyncio
 async def test_gpu_scheduler_multi_gpu_preferred_device():
-    scheduler = GPUScheduler([
-        GPUDevice(gpu_id="0", label="GPU0", total_vram_gb=8),
-        GPUDevice(gpu_id="1", label="GPU1", total_vram_gb=24),
-    ])
+    scheduler = GPUScheduler(
+        [
+            GPUDevice(gpu_id="0", label="GPU0", total_vram_gb=8),
+            GPUDevice(gpu_id="1", label="GPU1", total_vram_gb=24),
+        ]
+    )
     cap = ModelCapabilities(model_id="m", label="M", estimated_vram=12)
     allocation = await scheduler.allocate(cap)
     assert allocation.gpu_id == "1"

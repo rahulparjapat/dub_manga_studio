@@ -1,10 +1,13 @@
 """Shared UI helpers / state used by the tab builders."""
+
 from __future__ import annotations
+
 import json
 import time
-from pathlib import Path
-from ..common.paths import PROJECTS, project_dir, safe_name
+
 from ..common.config import load_config
+from ..common.paths import PROJECTS, project_dir, safe_name
+
 
 def list_projects() -> list[str]:
     PROJECTS.mkdir(parents=True, exist_ok=True)
@@ -19,8 +22,10 @@ def create_project(name: str) -> str:
     (d / "editions").mkdir(parents=True, exist_ok=True)
     manifest = d / "manifest.json"
     if not manifest.exists():
-        manifest.write_text(json.dumps(
-            {"id": pid, "name": name, "created": time.time()}, indent=2), encoding="utf-8")
+        manifest.write_text(
+            json.dumps({"id": pid, "name": name, "created": time.time()}, indent=2),
+            encoding="utf-8",
+        )
     return pid
 
 
@@ -34,4 +39,5 @@ def model_choices() -> list[tuple[str, str]]:
 
 def style_choices() -> list[str]:
     from ..adapt.prompts import all_styles
+
     return list(all_styles().keys())

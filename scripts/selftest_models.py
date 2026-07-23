@@ -11,6 +11,7 @@ Usage (after bootstrap):
     python scripts/selftest_models.py --model indicf5 # test one
     python scripts/selftest_models.py --ref data/voices/my.wav --ref-text "..."
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -18,11 +19,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from chatterbox_manga_studio.common import paths as P            # noqa: E402
-from chatterbox_manga_studio.common.config import load_config    # noqa: E402
+from chatterbox_manga_studio.common import paths as P  # noqa: E402
+from chatterbox_manga_studio.common.config import load_config  # noqa: E402
 from chatterbox_manga_studio.common.hf_token import export_token_to_env, get_hf_token  # noqa
-from chatterbox_manga_studio.dubbing.router import get_router     # noqa: E402
-from chatterbox_manga_studio.dubbing.workers.protocol import GenRequest, TARGET_LANG  # noqa
+from chatterbox_manga_studio.dubbing.router import get_router  # noqa: E402
+from chatterbox_manga_studio.dubbing.workers.protocol import TARGET_LANG, GenRequest  # noqa
 
 SAMPLE = {
     "english": "Our hero has awakened with a mysterious new system.",
@@ -43,12 +44,15 @@ def main():
     ap.add_argument("--ref-text", default=None)
     a = ap.parse_args()
 
-    P.ensure_dirs(); P.set_hf_cache_env(); export_token_to_env()
+    P.ensure_dirs()
+    P.set_hf_cache_env()
+    export_token_to_env()
     cfg = load_config()
     router = get_router()
 
     models = [a.model] if a.model else list(cfg["dubbing_models"].keys())
-    out = P.DATA / "output" / "selftest"; out.mkdir(parents=True, exist_ok=True)
+    out = P.DATA / "output" / "selftest"
+    out.mkdir(parents=True, exist_ok=True)
 
     print("=" * 62)
     print(" REAL MODEL SELF-TEST (on GPU)")
@@ -64,9 +68,14 @@ def main():
         tgt = default_target(mid)
         text = SAMPLE[tgt]
         wav = out / f"{mid}.wav"
-        req = GenRequest(text=text, out_path=str(wav), target=tgt,
-                         language=TARGET_LANG[tgt],
-                         reference_wav=a.ref, reference_text=a.ref_text).to_json()
+        req = GenRequest(
+            text=text,
+            out_path=str(wav),
+            target=tgt,
+            language=TARGET_LANG[tgt],
+            reference_wav=a.ref,
+            reference_text=a.ref_text,
+        ).to_json()
         print(f"  {mid:12s}: generating… (first run downloads weights)")
         try:
             r = router.generate(mid, req, unload_after=True)

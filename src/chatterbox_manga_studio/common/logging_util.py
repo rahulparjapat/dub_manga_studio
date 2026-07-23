@@ -1,5 +1,7 @@
 """Consistent logging — stdout + rotating file (L3)."""
+
 from __future__ import annotations
+
 import logging
 import logging.handlers
 import sys
@@ -13,8 +15,7 @@ def get_logger(name: str = "cms") -> logging.Logger:
     if not _CONFIGURED:
         root = logging.getLogger("cms")
         root.setLevel(logging.INFO)
-        fmt = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s", "%H:%M:%S")
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", "%H:%M:%S")
 
         sh = logging.StreamHandler(sys.stdout)
         sh.setFormatter(fmt)
@@ -25,7 +26,8 @@ def get_logger(name: str = "cms") -> logging.Logger:
             logdir = Path(__file__).resolve().parents[2].parent / "data" / "logs"
             logdir.mkdir(parents=True, exist_ok=True)
             fh = logging.handlers.RotatingFileHandler(
-                logdir / "studio.log", maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+                logdir / "studio.log", maxBytes=5_000_000, backupCount=3, encoding="utf-8"
+            )
             fh.setFormatter(fmt)
             root.addHandler(fh)
         except Exception:

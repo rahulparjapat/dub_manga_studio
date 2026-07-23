@@ -1,25 +1,22 @@
 """Filesystem storage backend implementation."""
+
 from __future__ import annotations
+
+import asyncio
 import hashlib
 import mimetypes
 import os
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO
-from urllib.parse import urlparse
 
 from ..storage_manager import (
-    ObjectStorageInterface,
-    KeyValueStorageInterface,
-    QueueStorageInterface,
-    FileLockInterface,
+    NotFoundError,
+    PermissionError,
     StorageBackend,
     StorageMetadata,
-    StorageError,
-    NotFoundError,
-    ConflictError,
-    PermissionError,
 )
 
 
@@ -60,7 +57,7 @@ class FilesystemObjectStore:
         try:
             full_path.relative_to(self.root)
         except ValueError:
-            raise PermissionError("Access denied", key, StorageBackend.FILESYSTEM)
+            raise PermissionError("Access denied", key, StorageBackend.FILESYSTEM) from None
         return full_path
 
     async def put(
@@ -69,7 +66,7 @@ class FilesystemObjectStore:
         data: bytes | BinaryIO,
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
-    ) -> "StorageMetadata":
+    ) -> StorageMetadata:
         path = self._resolve_path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -106,7 +103,7 @@ class FilesystemObjectStore:
         )
         return meta
 
-    async def get(self, key: str) -> tuple[bytes, "StorageMetadata"]:
+    async def get(self, key: str) -> tuple[bytes, StorageMetadata]:
         path = self._resolve_path(key)
         if not path.exists():
             raise NotFoundError(key, StorageBackend.FILESYSTEM)
@@ -115,7 +112,7 @@ class FilesystemObjectStore:
         meta = await self.head(key)
         return data, meta
 
-    async def get_stream(self, key: str) -> tuple[BinaryIO, "StorageMetadata"]:
+    async def get_stream(self, key: str) -> tuple[BinaryIO, StorageMetadata]:
         path = self._resolve_path(key)
         if not path.exists():
             raise NotFoundError(key, StorageBackend.FILESYSTEM)
@@ -142,7 +139,7 @@ class FilesystemObjectStore:
         path = self._resolve_path(key)
         return path.exists()
 
-    async def head(self, key: str) -> "StorageMetadata":
+    async def head(self, key: str) -> StorageMetadata:
         path = self._resolve_path(key)
         if not path.exists():
             raise NotFoundError(key, StorageBackend.FILESYSTEM)
@@ -167,7 +164,7 @@ class FilesystemObjectStore:
         delimiter: str | None = None,
         max_keys: int = 1000,
         continuation_token: str | None = None,
-    ) -> tuple[list["StorageMetadata"], str | None]:
+    ) -> tuple[list[StorageMetadata], str | None]:
         prefix_path = self._resolve_path(prefix) if prefix else self.root
         results = []
 
@@ -184,7 +181,7 @@ class FilesystemObjectStore:
 
         return results, None
 
-    async def copy(self, src_key: str, dst_key: str) -> "StorageMetadata":
+    async def copy(self, src_key: str, dst_key: str) -> StorageMetadata:
         src = self._resolve_path(src_key)
         dst = self._resolve_path(dst_key)
         if not src.exists():
@@ -193,7 +190,7 @@ class FilesystemObjectStore:
         shutil.copy2(src, dst)
         return await self.head(dst_key)
 
-    async def move(self, src_key: str, dst_key: str) -> "StorageMetadata":
+    async def move(self, src_key: str, dst_key: str) -> StorageMetadata:
         src = self._resolve_path(src_key)
         dst = self._resolve_path(dst_key)
         if not src.exists():
@@ -251,12 +248,14 @@ class FilesystemKVStore:
 
     async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         import json
+
         path = self._key_path(key)
         data = {"value": value, "ttl": ttl, "created": datetime.utcnow().isoformat()}
         path.write_text(json.dumps(data))
 
     async def get(self, key: str, default: Any = None) -> Any:
         import json
+
         path = self._key_path(key)
         if not path.exists():
             return default
@@ -294,6 +293,7 @@ class FilesystemKVStore:
     async def keys(self, pattern: str) -> list[str]:
         # Simple glob matching
         import fnmatch
+
         keys = []
         for f in self.root.glob("*.json"):
             key = f.stem
@@ -303,6 +303,7 @@ class FilesystemKVStore:
 
     async def ttl(self, key: str) -> int | None:
         import json
+
         path = self._key_path(key)
         if not path.exists():
             return None
@@ -322,6 +323,7 @@ class FilesystemKVStore:
         if not path.exists():
             return False
         import json
+
         data = json.loads(path.read_text())
         data["ttl"] = ttl
         data["created"] = datetime.utcnow().isoformat()
@@ -355,6 +357,7 @@ class FilesystemQueue:
     async def enqueue(self, queue: str, payload: Any, priority: int = 0) -> str:
         import json
         import uuid
+
         job_id = str(uuid.uuid4())
         path = self._job_path(job_id)
         data = {
@@ -369,6 +372,7 @@ class FilesystemQueue:
 
     async def dequeue(self, queue: str, count: int = 1) -> list[tuple[str, Any]]:
         import json
+
         results = []
         for path in sorted(self.root.glob("*.json")):
             if len(results) >= count:
@@ -386,6 +390,7 @@ class FilesystemQueue:
 
     async def peek(self, queue: str, count: int = 10) -> list[tuple[str, Any]]:
         import json
+
         results = []
         for path in sorted(self.root.glob("*.json")):
             if len(results) >= count:
@@ -403,6 +408,7 @@ class FilesystemQueue:
         for path in self.root.glob("*.json"):
             try:
                 import json
+
                 data = json.loads(path.read_text())
                 if data.get("queue") == queue:
                     count += 1
@@ -440,8 +446,9 @@ class FilesystemLock:
         safe_key = hashlib.sha256(key.encode()).hexdigest()
         return self.root / f"{safe_key}.lock"
 
-    async def acquire(self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10) -> bool:
-        import time
+    async def acquire(
+        self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10
+    ) -> bool:
         lock_path = self._lock_path(key)
         start = time.time()
 

@@ -1,9 +1,11 @@
 """Prompt Studio: layered prompt assembly, styles, templates, effective preview."""
+
 from __future__ import annotations
+
 import json
-from pathlib import Path
-from ..common.paths import PROJECT_ROOT, edition_dir
+
 from ..common.logging_util import get_logger
+from ..common.paths import PROJECT_ROOT
 
 log = get_logger("prompts")
 
@@ -56,33 +58,40 @@ RETENTION_PRESETS = {
     "Full Duration Dub": (
         "DURATION MODE — FULL DURATION DUB: Preserve the complete explanation. "
         "Match each cue's supplied seconds using faithful source-supported detail. "
-        "Do not summarize, skip action, merge events, or optimise for brevity."),
+        "Do not summarize, skip action, merge events, or optimise for brevity."
+    ),
     "Balanced Explain": (
         "DURATION MODE — BALANCED EXPLAIN: Keep every story beat and most scene detail, "
-        "but phrase naturally and efficiently. Aim for roughly 65–85% of source duration."),
+        "but phrase naturally and efficiently. Aim for roughly 65–85% of source duration."
+    ),
     "None (use style only)": "",
     "Cliffhanger": (
         "RETENTION MODE — CLIFFHANGER: Build suspense every few lines. End sections on "
         "open questions or teases ('...aur tabhi kuch aisa hua jo koi soch bhi nahi "
         "sakta tha'). Hold back the payoff; make the viewer NEED the next line. Keep "
-        "momentum relentless; no dead air."),
+        "momentum relentless; no dead air."
+    ),
     "Fast Recap": (
         "RETENTION MODE — FAST RECAP: Tight, high-density summary. Cut every filler word. "
         "Short punchy lines, quick cause->effect ('X hua, isliye Y hua'). Prioritise "
-        "the key plot beats; skip minor detail. Brisk, no lingering."),
+        "the key plot beats; skip minor detail. Brisk, no lingering."
+    ),
     "Deep Lore": (
         "RETENTION MODE — DEEP LORE: Explain the world, powers and motivations clearly "
         "and confidently, like an expert who loves the series. Slightly slower, richer "
         "sentences, but still spoken and vivid — never a dry textbook. Reward fans with "
-        "insight."),
+        "insight."
+    ),
     "Reaction / Hype": (
         "RETENTION MODE — REACTION/HYPE: Maximum excitement. React to big moments "
         "('BHAI yeh toh insane tha!'). Exclamations, hype build-ups before power moments, "
-        "genuine awe. High energy throughout, but keep the plot clear."),
+        "genuine awe. High energy throughout, but keep the plot clear."
+    ),
     "Chill Explain": (
         "RETENTION MODE — CHILL EXPLAIN: Relaxed, friendly, conversational — like "
         "explaining to a friend over chai. Warm and clear, gentle humour welcome, "
-        "unhurried but never boring. Easy to follow."),
+        "unhurried but never boring. Easy to follow."
+    ),
 }
 
 
@@ -93,6 +102,7 @@ def retention_choices() -> list[str]:
 def retention_block(name: str) -> str:
     return RETENTION_PRESETS.get(name, "")
 
+
 # Optional audience-engagement layer. It is intentionally constrained to the
 # existing source cue so it never creates a timing-breaking extra narration cue.
 ENGAGEMENT_MODES = {
@@ -102,20 +112,25 @@ ENGAGEMENT_MODES = {
         "hook, or transition only where the source scene earns it. Integrate it inside "
         "the SAME cue's narration; never add a separate line. Keep it grounded in the "
         "source action and avoid repetitive catchphrases. Use sparingly, roughly once "
-        "per 4–8 cues, especially at twists, danger, reveals, and scene changes."),
+        "per 4–8 cues, especially at twists, danger, reveals, and scene changes."
+    ),
     "High-Retention Commentary": (
         "ENGAGEMENT — HIGH RETENTION: Within the SAME cue, add source-grounded hype, "
         "curiosity, consequence, or cliffhanger commentary at major twists, fights, "
         "betrayals, power-ups and scene transitions. Never invent plot, dialogue, or "
         "future spoilers; never create an extra cue. Vary wording and do not put a "
-        "reaction in every line."),
+        "reaction in every line."
+    ),
 }
+
 
 def engagement_choices() -> list[str]:
     return list(ENGAGEMENT_MODES.keys())
 
+
 def engagement_block(name: str) -> str:
     return ENGAGEMENT_MODES.get(name, "")
+
 
 LANG_RULES = {
     "english": (
@@ -152,8 +167,7 @@ LANG_RULES = {
 def _store() -> dict:
     if PROMPTS_STORE.exists():
         return json.loads(PROMPTS_STORE.read_text(encoding="utf-8"))
-    return {"global_default": "", "custom_styles": {}, "templates": {},
-            "setup_presets": {}}
+    return {"global_default": "", "custom_styles": {}, "templates": {}, "setup_presets": {}}
 
 
 def _save(d: dict):
@@ -169,19 +183,26 @@ def all_styles() -> dict:
 
 
 def save_custom_style(name: str, text: str) -> str:
-    d = _store(); d.setdefault("custom_styles", {})[name] = text; _save(d)
+    d = _store()
+    d.setdefault("custom_styles", {})[name] = text
+    _save(d)
     return f"Saved style '{name}'."
 
 
 def delete_custom_style(name: str) -> str:
     d = _store()
     if name in d.get("custom_styles", {}):
-        del d["custom_styles"][name]; _save(d); return f"Deleted '{name}'."
+        del d["custom_styles"][name]
+        _save(d)
+        return f"Deleted '{name}'."
     return "Cannot delete a built-in style."
 
 
 def set_global_default(text: str) -> str:
-    d = _store(); d["global_default"] = text; _save(d); return "Global default saved."
+    d = _store()
+    d["global_default"] = text
+    _save(d)
+    return "Global default saved."
 
 
 def get_global_default() -> str:
@@ -189,7 +210,9 @@ def get_global_default() -> str:
 
 
 def save_template(name: str, text: str) -> str:
-    d = _store(); d.setdefault("templates", {})[name] = text; _save(d)
+    d = _store()
+    d.setdefault("templates", {})[name] = text
+    _save(d)
     return f"Template '{name}' saved."
 
 
@@ -200,7 +223,9 @@ def load_template(name: str) -> str:
 def delete_template(name: str) -> str:
     d = _store()
     if name in d.get("templates", {}):
-        del d["templates"][name]; _save(d); return f"Deleted template '{name}'."
+        del d["templates"][name]
+        _save(d)
+        return f"Deleted template '{name}'."
     return "No such template."
 
 
@@ -215,7 +240,9 @@ def list_templates() -> list[str]:
 def save_setup_preset(name: str, setup: dict) -> str:
     if not name.strip():
         return "Give the preset a name."
-    d = _store(); d.setdefault("setup_presets", {})[name] = setup; _save(d)
+    d = _store()
+    d.setdefault("setup_presets", {})[name] = setup
+    _save(d)
     return f"Saved setup preset '{name}'."
 
 
@@ -230,15 +257,22 @@ def load_setup_preset(name: str) -> dict:
 def delete_setup_preset(name: str) -> str:
     d = _store()
     if name in d.get("setup_presets", {}):
-        del d["setup_presets"][name]; _save(d); return f"Deleted preset '{name}'."
+        del d["setup_presets"][name]
+        _save(d)
+        return f"Deleted preset '{name}'."
     return "No such preset."
 
 
-def build_effective_prompt(target: str, style: str, project_prompt: str,
-                           glossary: dict | None = None,
-                           prior_context: str = "",
-                           src_duration: float | None = None,
-                           retention: str = "", engagement: str = "Natural Commentary") -> str:
+def build_effective_prompt(
+    target: str,
+    style: str,
+    project_prompt: str,
+    glossary: dict | None = None,
+    prior_context: str = "",
+    src_duration: float | None = None,
+    retention: str = "",
+    engagement: str = "Natural Commentary",
+) -> str:
     styles = all_styles()
     parts = [
         CORE_APP_RULES,
@@ -251,8 +285,7 @@ def build_effective_prompt(target: str, style: str, project_prompt: str,
         f"LANGUAGE RULES: {LANG_RULES.get(target, '')}",
     ]
     if glossary:
-        parts.append("GLOSSARY (keep consistent): " +
-                     json.dumps(glossary, ensure_ascii=False))
+        parts.append("GLOSSARY (keep consistent): " + json.dumps(glossary, ensure_ascii=False))
     if prior_context:
         parts.append(f"PRIOR BATCH CONTEXT: {prior_context}")
     if src_duration:

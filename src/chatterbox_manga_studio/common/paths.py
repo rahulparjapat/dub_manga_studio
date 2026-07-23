@@ -1,11 +1,13 @@
 """Central path management. All runtime data lives under data/."""
+
 from __future__ import annotations
+
 import os
 from pathlib import Path
 
 # Project root = two levels up from this file's package root
-PKG_ROOT = Path(__file__).resolve().parents[2]   # .../src
-PROJECT_ROOT = PKG_ROOT.parent                    # .../chatterbox_manga_studio
+PKG_ROOT = Path(__file__).resolve().parents[2]  # .../src
+PROJECT_ROOT = PKG_ROOT.parent  # .../chatterbox_manga_studio
 
 DATA = PROJECT_ROOT / "data"
 PROJECTS = DATA / "projects"
@@ -26,8 +28,19 @@ HF_TOKEN_FILE = PROJECT_ROOT / "hf_token.txt"
 WORKERS_ENVS = PROJECT_ROOT / "workers_envs"
 
 _ALL_DIRS = [
-    DATA, PROJECTS, INPUT, OUTPUT, DIRECT_AUDIO, VOICES, BGM,
-    CACHE, HF_CACHE, WHISPER_CACHE, HINDI_PACK_CACHE, UPLOADS, WORKERS_ENVS,
+    DATA,
+    PROJECTS,
+    INPUT,
+    OUTPUT,
+    DIRECT_AUDIO,
+    VOICES,
+    BGM,
+    CACHE,
+    HF_CACHE,
+    WHISPER_CACHE,
+    HINDI_PACK_CACHE,
+    UPLOADS,
+    WORKERS_ENVS,
 ]
 
 
@@ -42,7 +55,19 @@ def project_dir(project_id: str) -> Path:
 
 # Real video containers we accept as the source (never the 16 kHz transcription
 # WAV or transcript files that also live near the project).
-VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".flv", ".ts", ".mpg", ".mpeg", ".wmv"}
+VIDEO_EXTS = {
+    ".mp4",
+    ".mkv",
+    ".mov",
+    ".webm",
+    ".avi",
+    ".m4v",
+    ".flv",
+    ".ts",
+    ".mpg",
+    ".mpeg",
+    ".wmv",
+}
 
 
 def find_source_video(project_id: str) -> Path | None:
@@ -57,10 +82,8 @@ def find_source_video(project_id: str) -> Path | None:
     src = project_dir(project_id) / "source"
     if not src.exists():
         return None
-    vids = [p for p in sorted(src.glob("*"))
-            if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
+    vids = [p for p in sorted(src.glob("*")) if p.is_file() and p.suffix.lower() in VIDEO_EXTS]
     return vids[0] if vids else None
-
 
 
 def edition_dir(project_id: str, target: str) -> Path:

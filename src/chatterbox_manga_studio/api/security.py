@@ -1,4 +1,5 @@
 """Security helpers for production API deployment."""
+
 from __future__ import annotations
 
 import base64
@@ -17,7 +18,9 @@ class RolePolicy:
 
 ROLE_POLICIES = {
     "admin": RolePolicy("admin", ("*",)),
-    "operator": RolePolicy("operator", ("read", "jobs", "projects", "uploads", "pipeline", "models", "workers")),
+    "operator": RolePolicy(
+        "operator", ("read", "jobs", "projects", "uploads", "pipeline", "models", "workers")
+    ),
     "viewer": RolePolicy("viewer", ("read",)),
 }
 
@@ -42,7 +45,12 @@ def parse_api_keys(raw: str | None) -> dict[str, tuple[str, tuple[str, ...]]]:
 
 def encode_hs256_jwt(payload: dict[str, Any], secret: str) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = ".".join([_b64(json.dumps(header, separators=(",", ":")).encode()), _b64(json.dumps(payload, separators=(",", ":")).encode())])
+    signing_input = ".".join(
+        [
+            _b64(json.dumps(header, separators=(",", ":")).encode()),
+            _b64(json.dumps(payload, separators=(",", ":")).encode()),
+        ]
+    )
     sig = hmac.new(secret.encode(), signing_input.encode(), hashlib.sha256).digest()
     return f"{signing_input}.{_b64(sig)}"
 

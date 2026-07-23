@@ -4,6 +4,7 @@ The runtime coordinates model loading, unloading, inference, cancellation,
 timeouts, batching, progress callbacks, and concurrency limits around pluggable
 worker adapters. It does not contain model-specific logic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -141,7 +142,10 @@ class WorkerRuntime:
             await self.event_bus.publish(
                 EventType.MODEL_LOADED,
                 source="WorkerRuntime",
-                payload={"worker_id": self.adapter.worker_id, "model_id": self.adapter.capabilities.model_id},
+                payload={
+                    "worker_id": self.adapter.worker_id,
+                    "model_id": self.adapter.capabilities.model_id,
+                },
                 correlation_id=self.adapter.worker_id,
             )
         except Exception:
@@ -164,7 +168,10 @@ class WorkerRuntime:
         await self.event_bus.publish(
             EventType.MODEL_UNLOADED,
             source="WorkerRuntime",
-            payload={"worker_id": self.adapter.worker_id, "model_id": self.adapter.capabilities.model_id},
+            payload={
+                "worker_id": self.adapter.worker_id,
+                "model_id": self.adapter.capabilities.model_id,
+            },
             correlation_id=self.adapter.worker_id,
         )
 
@@ -178,7 +185,9 @@ class WorkerRuntime:
         """Run one inference with load, timeout, cancellation, and progress hooks."""
 
         if request.model_id != self.adapter.capabilities.model_id:
-            raise ValueError(f"Runtime for {self.adapter.capabilities.model_id} cannot run {request.model_id}")
+            raise ValueError(
+                f"Runtime for {self.adapter.capabilities.model_id} cannot run {request.model_id}"
+            )
         token = cancellation_token or CancellationToken()
         self._tokens[request.request_id] = token
         started = datetime.now(UTC)
@@ -189,7 +198,11 @@ class WorkerRuntime:
                 async with self._state_lock:
                     self._state = RuntimeState.RUNNING
                 await _call_progress(progress, request.request_id, 0.0, "started")
-                timeout = request.timeout_seconds if request.timeout_seconds is not None else self.default_timeout_seconds
+                timeout = (
+                    request.timeout_seconds
+                    if request.timeout_seconds is not None
+                    else self.default_timeout_seconds
+                )
                 coro = self.adapter.infer(request)
                 if timeout is not None:
                     result = await asyncio.wait_for(coro, timeout=timeout)
@@ -286,9 +299,11 @@ class WorkerRuntime:
         return payload
 
 
-async def _call_progress(callback: ProgressCallback | None, request_id: str, progress: float, message: str | None) -> None:
+async def _call_progress(
+    callback: ProgressCallback | None, request_id: str, progress: float, message: str | None
+) -> None:
     if callback is None:
         return
     result = callback(request_id, progress, message)
-    if hasattr(result, "__await__"):
+    if result is not None and hasattr(result, "__await__"):
         await result

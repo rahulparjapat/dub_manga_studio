@@ -19,7 +19,9 @@ async def provider_health(providers=Depends(get_providers)):
 
 
 @router.patch("/{provider}/priority", response_model=OkResponse)
-async def update_priority(provider: str, request: ProviderPriorityRequest, providers=Depends(get_providers)):
+async def update_priority(
+    provider: str, request: ProviderPriorityRequest, providers=Depends(get_providers)
+):
     await providers.update_priority(provider, request.priority)
     return OkResponse(data={"provider": provider, "priority": request.priority})
 

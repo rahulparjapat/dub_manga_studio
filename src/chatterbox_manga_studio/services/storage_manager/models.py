@@ -1,4 +1,5 @@
 """Pydantic models for the storage abstraction layer."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

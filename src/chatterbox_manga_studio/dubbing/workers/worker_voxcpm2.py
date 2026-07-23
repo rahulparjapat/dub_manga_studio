@@ -10,7 +10,9 @@ Speed:
     (bf16-capable GPU only, e.g. L4/A10G/A100; NOT T4). Falls back to standard
     automatically if the engine isn't installed or the GPU can't do bf16.
 """
+
 from __future__ import annotations
+
 import os
 import re
 import sys
@@ -33,6 +35,7 @@ class VoxCPM2Worker(BaseWorker):
         compile_ok = False
         try:
             import torch
+
             capability = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
             compile_ok = torch.cuda.is_available() and capability[0] >= 8
             bf16_ok = compile_ok and torch.cuda.is_bf16_supported()
@@ -54,19 +57,21 @@ class VoxCPM2Worker(BaseWorker):
                 # official OpenBMB/VoxCPM README: `pip install nano-vllm-voxcpm` ->
                 # `from nanovllm_voxcpm import VoxCPM`. Falls back cleanly if absent.
                 from nanovllm_voxcpm import VoxCPM as NanoVoxCPM  # type: ignore
+
                 self._model = NanoVoxCPM.from_pretrained("openbmb/VoxCPM2")
                 self._vllm = True
                 print("[voxcpm2] Nano-vLLM engine enabled (~2x faster).", flush=True)
                 return
             except Exception as e:
-                print(f"[voxcpm2] Nano-vLLM unavailable ({e}); using standard engine.",
-                      flush=True)
+                print(f"[voxcpm2] Nano-vLLM unavailable ({e}); using standard engine.", flush=True)
         from voxcpm import VoxCPM
+
         self._model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False)
 
     def synthesize(self, req: GenRequest) -> float:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
+
         p = req.preset or {}
         text = (req.text or "").strip()
         # The manual UI style hint was previously carried in emotion_tags but never
@@ -76,17 +81,17 @@ class VoxCPM2Worker(BaseWorker):
             hint = str(req.emotion_tags).strip().strip("()")
             if hint:
                 text = f"({hint}) {text}"
-        kw = dict(
-            text=text,
-            cfg_value=p.get("cfg_value", 2.0),
-            inference_timesteps=p.get("inference_timesteps", 14),
-            normalize=bool(p.get("normalize", False)),
-            retry_badcase=True,
+        kw = {
+            "text": text,
+            "cfg_value": p.get("cfg_value", 2.0),
+            "inference_timesteps": p.get("inference_timesteps", 14),
+            "normalize": bool(p.get("normalize", False)),
+            "retry_badcase": True,
             # The library's default allows extremely long bad generations before
             # retrying. A conservative cap catches appended/noisy tails while still
             # allowing naturally slow narration.
-            retry_badcase_ratio_threshold=3.0,
-        )
+            "retry_badcase_ratio_threshold": 3.0,
+        }
         if req.reference_wav:
             # VoxCPM2 clone modes:
             # - Hi-Fi Clone: prompt_wav_path + prompt_text + reference_wav_path (max similarity, style prefix ignored)
@@ -96,9 +101,9 @@ class VoxCPM2Worker(BaseWorker):
             ref_text = (req.reference_text or "").strip()
             clone_mode = getattr(req, "clone_mode", "hybrid")  # "hifi", "controllable", "hybrid"
             cue_index = getattr(req, "cue_index", 0)
-            
+
             kw["reference_wav_path"] = req.reference_wav
-            
+
             if clone_mode == "hifi":
                 # Always Hi-Fi: use prompt_wav + prompt_text + reference_wav
                 if ref_text:
@@ -121,10 +126,11 @@ class VoxCPM2Worker(BaseWorker):
         wav = self._model.generate(**kw)
         wav = np.asarray(wav, dtype="float32")
         # sample rate: both engines expose it; default 48kHz for VoxCPM2
-        sr = getattr(getattr(self._model, "tts_model", None), "sample_rate", None) \
-            or getattr(self._model, "sample_rate", 48000)
+        sr = getattr(getattr(self._model, "tts_model", None), "sample_rate", None) or getattr(
+            self._model, "sample_rate", 48000
+        )
         sf.write(req.out_path, wav, sr)
-        return float(len(wav)) / float(sr)
+        return float(len(wav)) / float(sr or 48000)
 
 
 if __name__ == "__main__":

@@ -11,38 +11,59 @@ This module:
   * tells you if the current GPU matches the stage you're about to run,
   * tracks per-project stage progress in state.json (resume-safe across GPU switches).
 """
+
 from __future__ import annotations
+
 import json
 import subprocess
 import time
 from pathlib import Path
 
-from .paths import project_dir
 from .logging_util import get_logger
+from .paths import project_dir
 
 log = get_logger("stageflow")
 
 # stage -> recommended machine + why
 STAGE_PLAN = {
-    "adaptation": {"machine": "CPU (free studio)", "gpu_needed": False,
-                   "why": "Only cloud API calls (Gemini/Groq/etc.) — no GPU used. "
-                          "Run on the FREE CPU studio to save all GPU credits."},
-    "transcribe": {"machine": "T4", "gpu_needed": True,
-                   "why": "Whisper large-v3 (INT8) runs fine on cheap T4."},
-    "dubbing":    {"machine": "L4", "gpu_needed": True,
-                   "why": "The only GPU-heavy step. L4 is ~2× faster + bf16 + more instances. "
-                          "Spend your limited L4 hours HERE."},
-    "export":     {"machine": "T4 or CPU", "gpu_needed": False,
-                   "why": "FFmpeg is light. T4 NVENC is fast; CPU (libx264) also works."},
+    "adaptation": {
+        "machine": "CPU (free studio)",
+        "gpu_needed": False,
+        "why": "Only cloud API calls (Gemini/Groq/etc.) — no GPU used. "
+        "Run on the FREE CPU studio to save all GPU credits.",
+    },
+    "transcribe": {
+        "machine": "T4",
+        "gpu_needed": True,
+        "why": "Whisper large-v3 (INT8) runs fine on cheap T4.",
+    },
+    "dubbing": {
+        "machine": "L4",
+        "gpu_needed": True,
+        "why": "The only GPU-heavy step. L4 is ~2× faster + bf16 + more instances. "
+        "Spend your limited L4 hours HERE.",
+    },
+    "export": {
+        "machine": "T4 or CPU",
+        "gpu_needed": False,
+        "why": "FFmpeg is light. T4 NVENC is fast; CPU (libx264) also works.",
+    },
 }
+
 
 # map a detected GPU name -> our profile key
 def detect_current_gpu() -> str:
     """Return one of: t4, l4, a10g, a100_40, a100_80, h100, cpu, unknown."""
     try:
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-            text=True, stderr=subprocess.DEVNULL).strip().upper()
+        out = (
+            subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            .strip()
+            .upper()
+        )
     except Exception:
         return "cpu"
     if not out:
@@ -75,24 +96,33 @@ def stage_guidance(stage: str) -> dict:
     if stage == "adaptation":
         ok = True  # runs anywhere; ideal on CPU
         if cur not in ("cpu", "unknown"):
-            tip = ("You're on a GPU but adaptation needs none — you could switch to the "
-                   "free CPU studio to save GPU credits.")
+            tip = (
+                "You're on a GPU but adaptation needs none — you could switch to the "
+                "free CPU studio to save GPU credits."
+            )
     elif stage == "transcribe":
         ok = cur != "cpu"
-        tip = "" if cur == "t4" else (
-            f"You're on {cur.upper()}. Transcribe works here, but T4 is the cheap choice.")
+        tip = (
+            ""
+            if cur == "t4"
+            else (f"You're on {cur.upper()}. Transcribe works here, but T4 is the cheap choice.")
+        )
     elif stage == "dubbing":
         ok = cur not in ("cpu", "unknown")
         if cur == "t4":
-            tip = ("You're on T4 — dubbing works but is ~2× slower and Fish won't fit. "
-                   "Switch to L4 for best speed/quality, then switch back for export.")
+            tip = (
+                "You're on T4 — dubbing works but is ~2× slower and Fish won't fit. "
+                "Switch to L4 for best speed/quality, then switch back for export."
+            )
         elif cur == "cpu":
             tip = "No GPU detected — switch to L4 (or T4) before dubbing."
     elif stage == "export":
         ok = True
         if cur == "l4":
-            tip = ("You're on L4 (expensive). Export is light — switch to T4 or CPU to "
-                   "save L4 credits.")
+            tip = (
+                "You're on L4 (expensive). Export is light — switch to T4 or CPU to "
+                "save L4 credits."
+            )
     return {
         "stage": stage,
         "current_gpu": current_gpu_label(),
@@ -126,7 +156,10 @@ def load_state(project_id: str) -> dict:
 def mark_stage(project_id: str, stage: str, gpu: str | None = None) -> dict:
     st = load_state(project_id)
     st.setdefault("stages", {})[stage] = {
-        "done": True, "ts": time.time(), "gpu": gpu or current_gpu_label()}
+        "done": True,
+        "ts": time.time(),
+        "gpu": gpu or current_gpu_label(),
+    }
     _state_path(project_id).write_text(json.dumps(st, indent=2), encoding="utf-8")
     return st
 
@@ -139,6 +172,7 @@ def transcript_fingerprint(project_id: str) -> str:
     adaptation's line<->cue index contract may be broken.
     """
     import hashlib
+
     tr = project_dir(project_id) / "transcript" / "transcript.json"
     if not tr.exists():
         return ""
@@ -146,8 +180,9 @@ def transcript_fingerprint(project_id: str) -> str:
         data = json.loads(tr.read_text(encoding="utf-8"))
     except Exception:
         return ""
-    key = ";".join(f"{round(float(c.get('start', 0)), 2)}-{round(float(c.get('end', 0)), 2)}"
-                   for c in data)
+    key = ";".join(
+        f"{round(float(c.get('start', 0)), 2)}-{round(float(c.get('end', 0)), 2)}" for c in data
+    )
     return f"{len(data)}:" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
@@ -163,7 +198,7 @@ def transcript_changed_since_adaptation(project_id: str) -> bool:
     st = load_state(project_id)
     saved = st.get("transcript_fp_at_adaptation")
     if not saved:
-        return False   # nothing recorded yet -> nothing to warn about
+        return False  # nothing recorded yet -> nothing to warn about
     return transcript_fingerprint(project_id) != saved
 
 
@@ -177,13 +212,13 @@ def next_stage(project_id: str) -> str:
 
 # Which UI tab handles each stage (for the Resume dashboard's "go here next" hint).
 STAGE_TAB = {
-    "ingest":     "① Create → Tab 1 · Ingest & Transcribe",
+    "ingest": "① Create → Tab 1 · Ingest & Transcribe",
     "transcribe": "① Create → Tab 1 · Ingest & Transcribe",
     "adaptation": "① Create → Tab 2 · Script & Adaptation",
-    "forward":    "① Create → Tab 2 · Script & Adaptation",
-    "dubbing":    "② Dub → Tab 3 · Dubbing",
-    "export":     "③ Export & Settings → Tab 5 · Export",
-    "done":       "🎉 Finished — everything is done",
+    "forward": "① Create → Tab 2 · Script & Adaptation",
+    "dubbing": "② Dub → Tab 3 · Dubbing",
+    "export": "③ Export & Settings → Tab 5 · Export",
+    "done": "🎉 Finished — everything is done",
 }
 
 
@@ -215,12 +250,15 @@ def progress_summary(project_id: str) -> str:
         lines.append(f"{mark} {s}{gpu}")
     nxt = next_stage(project_id)
     if nxt != "done":
-        plan = STAGE_PLAN.get(nxt) or STAGE_PLAN.get(
-            {"forward": "adaptation", "ingest": "transcribe"}.get(nxt, nxt), {})
+        STAGE_PLAN.get(nxt) or STAGE_PLAN.get(
+            {"forward": "adaptation", "ingest": "transcribe"}.get(nxt, nxt), {}
+        )
         g = stage_guidance(nxt if nxt in STAGE_PLAN else "dubbing")
         lines.append("")
-        lines.append(f"➡ **Next: {nxt}** — recommended on **{g['recommended']}**. "
-                     f"You're on **{g['current_gpu']}**.")
+        lines.append(
+            f"➡ **Next: {nxt}** — recommended on **{g['recommended']}**. "
+            f"You're on **{g['current_gpu']}**."
+        )
         if g["tip"]:
             lines.append(f"💡 {g['tip']}")
     else:
@@ -232,23 +270,29 @@ def gpu_config_check() -> dict:
     """GPU-switch safety: compare config active_gpu vs the ACTUAL detected GPU.
     Returns a warning if they differ so instance counts / precision match reality."""
     from .config import load_config
+
     cfg = load_config()
     configured = cfg.get("active_gpu", "?")
     detected = detect_current_gpu()
     match = (configured == detected) or detected in ("unknown",)
     msg = ""
     if detected == "cpu":
-        msg = ("No GPU detected (CPU studio). Fine for adaptation/export; "
-               "switch to a GPU before transcribe/dubbing.")
+        msg = (
+            "No GPU detected (CPU studio). Fine for adaptation/export; "
+            "switch to a GPU before transcribe/dubbing."
+        )
     elif not match:
-        msg = (f"⚠ config active_gpu is '{configured}' but you're actually on "
-               f"'{detected}'. Set active_gpu: {detected} in config.yaml + restart so "
-               f"instance count & precision match this GPU. (Runtime bf16 auto-detect "
-               f"prevents crashes, but the profile may be sub-optimal.)")
+        msg = (
+            f"⚠ config active_gpu is '{configured}' but you're actually on "
+            f"'{detected}'. Set active_gpu: {detected} in config.yaml + restart so "
+            f"instance count & precision match this GPU. (Runtime bf16 auto-detect "
+            f"prevents crashes, but the profile may be sub-optimal.)"
+        )
     return {"configured": configured, "detected": detected, "match": match, "message": msg}
 
 
 # ---- crash-safe autosave (checkpoint arbitrary in-progress state) ----
+
 
 def checkpoint(project_id: str, key: str, value) -> None:
     """Save a small piece of in-progress state (e.g. current batch, export config,
@@ -258,7 +302,7 @@ def checkpoint(project_id: str, key: str, value) -> None:
     p = _state_path(project_id)
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(p)   # atomic on POSIX — never leaves a half-written state file
+    tmp.replace(p)  # atomic on POSIX — never leaves a half-written state file
 
 
 def get_checkpoint(project_id: str, key: str, default=None):
@@ -270,7 +314,8 @@ def clear_checkpoint(project_id: str, key: str) -> None:
     st = load_state(project_id)
     st.get("checkpoints", {}).pop(key, None)
     _state_path(project_id).write_text(
-        json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(st, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def resume_hint(project_id: str) -> str:
@@ -282,8 +327,10 @@ def resume_hint(project_id: str) -> str:
     parts = []
     if "dub_progress" in cps:
         v = cps["dub_progress"]["value"]
-        parts.append(f"dubbing was at cue {v.get('done', '?')}/{v.get('total', '?')} "
-                     f"(model {v.get('model', '?')}) — re-run Dub to resume (finished cues skip).")
+        parts.append(
+            f"dubbing was at cue {v.get('done', '?')}/{v.get('total', '?')} "
+            f"(model {v.get('model', '?')}) — re-run Dub to resume (finished cues skip)."
+        )
     if "export_config" in cps:
         parts.append("export settings were saved — re-open Tab 5 to continue.")
     return "  •  ".join(parts)

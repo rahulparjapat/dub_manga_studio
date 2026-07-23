@@ -1,6 +1,7 @@
 """Configuration management using Pydantic Settings v2."""
+
 from __future__ import annotations
-import os
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -8,12 +9,13 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .paths import CONFIG_YAML, PROJECT_ROOT
 from .exceptions import ConfigurationError
+from .paths import CONFIG_YAML
 
 
 class GPUSettings(BaseSettings):
     """GPU profile configuration."""
+
     model_config = SettingsConfigDict(extra="allow")
 
     label: str
@@ -29,6 +31,7 @@ class GPUSettings(BaseSettings):
 
 class WhisperSettings(BaseSettings):
     """Whisper transcription settings."""
+
     model: str = "large-v3"
     device: Literal["cuda", "cpu"] = "cuda"
     compute_type: str = "int8_float16"
@@ -42,6 +45,7 @@ class WhisperSettings(BaseSettings):
 
 class TTSQualityPreset(BaseSettings):
     """TTS quality preset configuration."""
+
     exaggeration: float = 0.5
     cfg_weight: float = 0.5
     temperature: float = 0.8
@@ -53,20 +57,24 @@ class TTSQualityPreset(BaseSettings):
 
 class TTSQualitySettings(BaseSettings):
     """TTS quality settings."""
+
     presets: dict[str, TTSQualityPreset] = Field(default_factory=dict)
     style_to_preset: dict[str, str] = Field(default_factory=dict)
     default: str = "natural"
     cross_language_cfg_zero: bool = True
-    reference_voice: dict[str, Any] = Field(default_factory=lambda: {
-        "target_seconds": 8,
-        "sample_rate": 24000,
-        "mono": True,
-        "denoise": "light"
-    })
+    reference_voice: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "target_seconds": 8,
+            "sample_rate": 24000,
+            "mono": True,
+            "denoise": "light",
+        }
+    )
 
 
 class AudioCleanupSettings(BaseSettings):
     """Audio cleanup settings."""
+
     trim_silence: bool = False
     edge_fade_ms: int = 30
     internal_split_crossfade_ms: int = 15
@@ -81,12 +89,14 @@ class AudioCleanupSettings(BaseSettings):
 
 class LongCueSettings(BaseSettings):
     """Long cue split settings."""
+
     enabled: bool = True
     threshold_chars: int = 600
 
 
 class LiveRenderSettings(BaseSettings):
     """Live render pipeline settings."""
+
     enabled_default: bool = False
     cue_group_size: int = 12
     min_free_vram_reserve_gb: int = 2
@@ -95,38 +105,60 @@ class LiveRenderSettings(BaseSettings):
 
 class ProviderSettings(BaseSettings):
     """AI provider settings."""
+
     gemini: dict[str, str] = Field(default_factory=lambda: {"default_model": "gemini-flash-latest"})
-    groq: dict[str, str] = Field(default_factory=lambda: {"default_model": "llama-3.3-70b-versatile"})
-    openrouter: dict[str, str] = Field(default_factory=lambda: {"default_model": "google/gemini-2.5-flash"})
+    groq: dict[str, str] = Field(
+        default_factory=lambda: {"default_model": "llama-3.3-70b-versatile"}
+    )
+    openrouter: dict[str, str] = Field(
+        default_factory=lambda: {"default_model": "google/gemini-2.5-flash"}
+    )
     cerebras: dict[str, str] = Field(default_factory=lambda: {"default_model": "llama-3.3-70b"})
 
 
 class AdaptationSettings(BaseSettings):
     """Adaptation settings."""
+
     main_batches_default: int = 6
     auto_glossary_default: bool = True
 
 
 class ExportSettings(BaseSettings):
     """Export settings."""
-    presets: list[str] = Field(default_factory=lambda: ["Quick Clean Dub", "YouTube Standard", "Full Manga Export", "Custom"])
-    timing_modes: list[str] = Field(default_factory=lambda: [
-        "Cue-Locked Audio Master Sync",
-        "Cue-Locked (Keep Natural Pauses)",
-        "Full Video Retime",
-        "Keep Original Timing",
-        "Freeze/Pad",
-        "Trim"
-    ])
+
+    presets: list[str] = Field(
+        default_factory=lambda: [
+            "Quick Clean Dub",
+            "YouTube Standard",
+            "Full Manga Export",
+            "Custom",
+        ]
+    )
+    timing_modes: list[str] = Field(
+        default_factory=lambda: [
+            "Cue-Locked Audio Master Sync",
+            "Cue-Locked (Keep Natural Pauses)",
+            "Full Video Retime",
+            "Keep Original Timing",
+            "Freeze/Pad",
+            "Trim",
+        ]
+    )
     default_timing: str = "Cue-Locked Audio Master Sync"
     default_audio_mode: str = "Clean Dub"
-    metadata_languages: list[str] = Field(default_factory=lambda: [
-        "English", "Hindi", "Hinglish Roman", "Hinglish Devanagari Preferred"
-    ])
+    metadata_languages: list[str] = Field(
+        default_factory=lambda: [
+            "English",
+            "Hindi",
+            "Hinglish Roman",
+            "Hinglish Devanagari Preferred",
+        ]
+    )
 
 
 class DubbingModelSettings(BaseSettings):
     """Individual dubbing model configuration."""
+
     label: str
     port: int
     venv: str
@@ -147,6 +179,7 @@ class DubbingModelSettings(BaseSettings):
 
 class AppSettings(BaseSettings):
     """Application settings."""
+
     model_config = SettingsConfigDict(extra="allow")
 
     share: bool = True
@@ -159,11 +192,8 @@ class AppSettings(BaseSettings):
 
 class Settings(BaseSettings):
     """Main settings loaded from config.yaml."""
-    model_config = SettingsConfigDict(
-        yaml_file=CONFIG_YAML,
-        env_prefix="CMS_",
-        extra="allow"
-    )
+
+    model_config = SettingsConfigDict(yaml_file=CONFIG_YAML, env_prefix="CMS_", extra="allow")
 
     active_gpu: Literal["auto", "t4", "l4", "a10g", "a100_40", "a100_80", "h100"] = "auto"
 
@@ -194,7 +224,10 @@ class Settings(BaseSettings):
     @classmethod
     def parse_dubbing_models(cls, v: dict[str, Any]) -> dict[str, DubbingModelSettings]:
         if isinstance(v, dict):
-            return {k: DubbingModelSettings(**val) if isinstance(val, dict) else val for k, val in v.items()}
+            return {
+                k: DubbingModelSettings(**val) if isinstance(val, dict) else val
+                for k, val in v.items()
+            }
         return {}
 
 
@@ -221,6 +254,7 @@ def active_profile(cfg: Settings | None = None) -> dict[str, Any]:
     if gpu == "auto":
         try:
             from .stageflow import detect_current_gpu
+
             detected = detect_current_gpu()
         except Exception:
             detected = "unknown"
@@ -233,6 +267,7 @@ def active_profile(cfg: Settings | None = None) -> dict[str, Any]:
     profile = cfg.gpu_profiles.get(gpu)
     if not profile:
         from .logging import get_logger
+
         get_logger("config").warning("Unknown active_gpu '%s'; falling back to a10g", gpu)
         profile = cfg.gpu_profiles.get("a10g", {})
 
@@ -265,7 +300,9 @@ def model_cfg(model_id: str, cfg: Settings | None = None) -> dict[str, Any]:
 def all_models(cfg: Settings | None = None) -> dict[str, dict[str, Any]]:
     """Get all model configurations."""
     cfg = cfg or load_config()
-    return {k: dict(v) if hasattr(v, "__dict__") else dict(v) for k, v in cfg.dubbing_models.items()}
+    return {
+        k: dict(v) if hasattr(v, "__dict__") else dict(v) for k, v in cfg.dubbing_models.items()
+    }
 
 
 def default_model_for_target(target: str, cfg: Settings | None = None) -> str:

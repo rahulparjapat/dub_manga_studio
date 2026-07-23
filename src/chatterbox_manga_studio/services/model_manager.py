@@ -4,6 +4,7 @@ ModelManager never switches on model names. Selection is driven by plugin
 capabilities and runtime loading is delegated through injectable runtimes that
 wrap existing workers.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -195,7 +196,12 @@ class ModelManager:
         records = {cap.model_id: await self.get_record(cap.model_id) for cap in candidates}
         candidates.sort(
             key=lambda cap: (
-                0 if records.get(cap.model_id) and records[cap.model_id].status == ModelStatus.LOADED else 1,
+                (
+                    0
+                    if (rec := records.get(cap.model_id)) is not None
+                    and rec.status == ModelStatus.LOADED
+                    else 1
+                ),
                 cap.estimated_vram,
                 cap.startup_time,
                 cap.model_id,
