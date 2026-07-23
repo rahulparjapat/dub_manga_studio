@@ -1,0 +1,23 @@
+# VoxCPM2 Worker - T4 (FP16, no compile)
+FROM chatterbox-manga-studio/worker-base:latest AS voxcpm2-t4
+
+ENV MODEL_ID=voxcpm2 \
+    TTS_COMPILE=0 \
+    TTS_PRECISION=float16 \
+    VOXCPM_VLLM=0 \
+    VOXCPM_FLASH_ATTN=0 \
+    VOXCPM_BATCH_SIZE=1 \
+    PYTHON_VERSION=3.11
+
+# Install VoxCPM2 specific dependencies
+RUN uv pip install --no-cache-dir \
+    voxcpm \
+    soundfile \
+    "numpy==1.26.4" \
+    librosa \
+    torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+
+# Optional: Nano-vLLM (will fail gracefully on T4)
+RUN uv pip install --no-cache-dir "git+https://github.com/a710128/nanovllm-voxcpm.git" 2>/dev/null || echo "Nano-vLLM not installed (optional)"
+
+CMD ["python", "-m", "workers.worker_voxcpm2", "--port", "8120"]

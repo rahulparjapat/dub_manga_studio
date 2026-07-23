@@ -1,0 +1,10 @@
+# APP environment — deliberately TINY for the 10 GB disk budget.
+# NO torch here (torch is ~3 GB). Whisper + every TTS model runs in its OWN
+# on-demand venv that is installed only when needed and evicted after use.
+gradio>=4.44,<6
+soundfile>=0.12.1
+numpy>=1.26,<2.1
+PyYAML>=6.0
+gdown>=5.2.0
+huggingface_hub>=0.24
+# (imageio-ffmpeg optional fallback if system ffmpeg is unavailable)

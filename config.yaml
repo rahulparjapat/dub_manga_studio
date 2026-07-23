@@ -1,0 +1,210 @@
+# =====================================================================
+# Chatterbox Manga Studio — Multi-Model Edition config
+# L1 NOTE: do NOT let code rewrite this file (yaml.safe_dump wipes comments).
+#          Edit by hand only. Runtime code READS this; it must never WRITE it.
+# =====================================================================
+
+# ----- pick the GPU the Lightning Studio is on -----
+# 'auto' (recommended) = detect the GPU at runtime; T4 uses fp16, L4 uses bf16
+#         automatically, so switching T4<->L4 needs NO config edit + no bf16 crash.
+# T4  = 16 GB, Turing  -> NO bf16 (uses fp16 automatically), 1 TTS instance
+# L4  = 24 GB, Ada     -> bf16 + fp8 OK, more instances
+# options: auto | t4 | l4 | a10g | a100_40 | a100_80 | h100
+active_gpu: auto
+
+app:
+  share: true
+  server_name: "0.0.0.0"
+  server_port: 7860
+  title: "Chatterbox Manga Studio — Multi-Model Edition"
+  keepalive: true          # in-app ping so the session + warm Whisper stay alive
+  keepalive_minutes: 90    # how long to keep pinging (does NOT override Lightning idle-sleep)
+
+cache:
+  huggingface_home: data/cache/huggingface
+  whisper: data/cache/whisper
+  chatterbox_hindi_pack: data/cache/chatterbox_hindi_pack
+
+# ----- GPU profiles (auto-tune per card) -----
+# precision: bf16 requested only where the GPU supports it; workers auto-fall back
+# to fp16 at RUNTIME if the card can't do bf16 (T4), so T4 never crashes.
+gpu_profiles:
+  t4:      {label: "Tesla T4 16GB",   tts_precision: float16,  torch_compile: false, tts_instances: 1, live_group_size: 12, render_group_size: 12, min_free_vram_reserve_gb: 2, whisper_batch: [24,16,8,1],  vram_gb: 16}
+  l4:      {label: "NVIDIA L4 24GB",  tts_precision: bfloat16, torch_compile: true,  tts_instances: 2, live_group_size: 14, render_group_size: 14, min_free_vram_reserve_gb: 3, whisper_batch: [24,16,8,1],  vram_gb: 24}
+  a10g:    {label: "NVIDIA A10G 24GB",tts_precision: bfloat16, torch_compile: true,  tts_instances: 3, live_group_size: 16, render_group_size: 16, min_free_vram_reserve_gb: 3, whisper_batch: [24,16,8], vram_gb: 24}
+  a100_40: {label: "NVIDIA A100 40GB",tts_precision: bfloat16, torch_compile: true,  tts_instances: 5, live_group_size: 20, render_group_size: 20, min_free_vram_reserve_gb: 4, whisper_batch: [32,24,16],vram_gb: 40}
+  a100_80: {label: "NVIDIA A100 80GB",tts_precision: bfloat16, torch_compile: true,  tts_instances: 6, live_group_size: 24, render_group_size: 24, min_free_vram_reserve_gb: 4, whisper_batch: [32,24,16],vram_gb: 80}
+  h100:    {label: "NVIDIA H100 80GB",tts_precision: bfloat16, torch_compile: true,  tts_instances: 6, live_group_size: 24, render_group_size: 24, min_free_vram_reserve_gb: 4, whisper_batch: [48,32,16],vram_gb: 80}
+
+# ----- transcription (faster-whisper = CTranslate2, NO torch; cached on disk) -----
+whisper:
+  model: large-v3
+  device: cuda
+  compute_type: int8_float16   # ~35% faster than float16 on T4, ~half the VRAM, negligible WER loss (verified). float16 = max fidelity but slower.
+  vad: true
+  word_timestamps: true
+  keep_cached: true
+  min_silence_ms: 1200     # VAD: only split at longer pauses -> fewer, longer cues
+  max_speech_s: 30         # TARGET seconds per cue (UI slider). Cues aim for this but
+                           # END at the nearest natural pause (±40%) so speech never
+                           # breaks mid-sentence. e.g. 30 -> cuts land ~18-42s at pauses.
+  beam_size: 5             # keep max accuracy
+
+# ----- targets -----
+targets:
+  - {id: english,             label: "English",                       script: latin}
+  - {id: hindi_devanagari,    label: "Hindi — Devanagari",            script: devanagari}
+  - {id: hinglish_roman,      label: "Hinglish — Roman",              script: latin}
+  - {id: hinglish_devanagari, label: "Hinglish — Devanagari Preferred",script: devanagari}
+
+# ----- dubbing models (one at a time on 10 GB; installed on demand, weights cleared after) -----
+dubbing_models:
+  chatterbox:
+    label: "Chatterbox (English / fallback) — MIT"
+    port: 8101
+    venv: chatterbox
+    python: "3.10"
+    est_vram_gb: 6
+    weights_gated: false
+    license_flag: "MIT — free commercial"
+    default_for: [english]
+    supports_clone: true
+    watermark_default: true
+  indicf5:
+    label: "IndicF5 (Native Hindi/Hinglish)"
+    port: 8110
+    venv: indicf5
+    python: "3.10"
+    est_vram_gb: 4
+    weights_gated: true
+    license_flag: "AI4Bharat gated — verify commercial use"
+    default_for: [hindi_devanagari, hinglish_roman, hinglish_devanagari]
+    supports_clone: true
+    watermark_default: false
+    needs_ref_transcript: true
+    roman_hinglish_patch: true
+  voxcpm2:
+    label: "VoxCPM2 (Native, free-commercial) — Apache 2.0"
+    port: 8120
+    venv: voxcpm2
+    python: "3.11"
+    est_vram_gb: 8
+    weights_gated: false
+    license_flag: "Apache 2.0 — free commercial"
+    default_for: []
+    supports_clone: true
+    watermark_default: false
+    needs_ref_transcript: true
+    nano_vllm: false          # set true for ~2x speed on L4/A10G/A100 (needs nanovllm-voxcpm; auto-fallback if absent)
+  qwen3tts:
+    label: "Qwen3-TTS 1.7B (English/Hinglish-Roman) — Apache 2.0"
+    port: 8150
+    venv: qwen3tts
+    python: "3.12"
+    est_vram_gb: 6
+    weights_gated: false
+    license_flag: "Apache 2.0 — free commercial"
+    default_for: []           # NOT trained on Hindi; best for english / hinglish_roman
+    supports_clone: true
+    watermark_default: false
+    needs_ref_transcript: true   # Base checkpoint clones from ref audio + transcript
+  vibevoice:
+    label: "VibeVoice-Hindi (long-form)"
+    port: 8130
+    venv: vibevoice
+    python: "3.11"
+    est_vram_gb: 12
+    weights_gated: false
+    license_flag: "Community finetune — verify weights license"
+    default_for: []
+    supports_clone: true
+    watermark_default: false
+    quantize_4bit: true
+  fish:
+    label: "Fish S2 Pro (top quality) — ⚠ paid commercial license"
+    port: 8140
+    venv: fish
+    python: "3.12"
+    est_vram_gb: 24          # runs at fp16 (--half) ≈24GB — fits L4/A100, NOT a 16GB T4
+    est_disk_gb: 15
+    weights_gated: true
+    license_flag: "Fish Research License — PAID for commercial/monetized use"
+    default_for: []
+    supports_clone: true
+    watermark_default: false
+    int4_default: true
+    inline_emotion_tags: true
+
+# NOTE ports are spaced by 10 so multiple TTS INSTANCES (base_port + inst) don't collide.
+
+# ----- TTS generation quality presets (verified best practice) -----
+tts_quality:
+  presets:
+    # Conservative VoxCPM2 guidance reduces the known buzzy/trailing-artifact risk.
+    # Other workers ignore cfg_value, so these remain safe shared presets.
+    # 14 steps is the high-quality practical default on a T4. 30 is supported but
+    # has sharply diminishing quality gains and makes one-hour dubbing impractical.
+    natural:    {exaggeration: 0.5, cfg_weight: 0.5, temperature: 0.8,  repetition_penalty: 2.0, cfg_value: 1.6, inference_timesteps: 14, normalize: false}
+    expressive: {exaggeration: 0.7, cfg_weight: 0.3, temperature: 0.85, repetition_penalty: 2.0, cfg_value: 1.7, inference_timesteps: 14, normalize: false}
+    calm:       {exaggeration: 0.4, cfg_weight: 0.5, temperature: 0.7,  repetition_penalty: 2.0, cfg_value: 1.5, inference_timesteps: 14, normalize: false}
+  style_to_preset:
+    "Engaging YouTube Hinglish": expressive
+    "High-Energy / Gen-Z": expressive
+    "Calm but Engaging": calm
+    default: natural
+  cross_language_cfg_zero: true
+  reference_voice: {target_seconds: 8, sample_rate: 24000, mono: true, denoise: light}
+
+# ----- audio cleanup -----
+audio_cleanup:
+  # Preserve the model's full word endings and natural pauses. Disabled by default
+  # because amplitude-only trimming can clip soft articulation/whisper tails.
+  trim_silence: false
+  edge_fade_ms: 30
+  internal_split_crossfade_ms: 15
+  silence_threshold_db: -45
+  leading_padding_ms: 20
+  trailing_padding_ms: 30
+  final_sample_rate: 48000
+  final_channels: 1
+  loudness_target_lufs: -16
+  true_peak_dbtp: -1.5
+
+# ----- long-cue split-and-rejoin (only for VERY long cues; sentence-boundary safe) -----
+# Splits a cue only if its text >= threshold_chars, at sentence boundaries, then rejoins
+# the chunks with a 15ms crossfade into ONE cue WAV. Short/normal cues are untouched.
+long_cue:
+  enabled: true
+  threshold_chars: 600
+
+# ----- live render pipeline (TRUE PARALLEL: renders no-gap groups while TTS generates) -----
+live_render:
+  enabled_default: false
+  cue_group_size: 12
+  min_free_vram_reserve_gb: 2
+  pause_for_big_models: false
+
+# ----- AI adaptation providers -----
+# NOTE: model IDs change often. Prefer non-expiring aliases below. If a call fails
+# with "model not found", open the Model browser in Tab 2 -> pick a live model.
+# 'gemini-flash-latest' always points to the current fast Gemini (never goes stale).
+providers:
+  gemini:     {default_model: "gemini-flash-latest"}
+  groq:       {default_model: "llama-3.3-70b-versatile"}
+  openrouter: {default_model: "google/gemini-2.5-flash"}
+  cerebras:   {default_model: "llama-3.3-70b"}
+
+adaptation:
+  main_batches_default: 6
+  auto_glossary_default: true
+
+# ----- export (Cue-Locked default = NO GAPS: cues back-to-back, video stretched per cue) -----
+export:
+  presets: [Quick Clean Dub, YouTube Standard, Full Manga Export, Custom]
+  timing_modes: [Cue-Locked Audio Master Sync, "Cue-Locked (Keep Natural Pauses)", Full Video Retime, Keep Original Timing, Freeze/Pad, Trim]
+  default_timing: "Cue-Locked Audio Master Sync"
+  default_audio_mode: "Clean Dub"
+  metadata_languages: [English, Hindi, Hinglish Roman, Hinglish Devanagari Preferred]
+
+keepalive_minutes_max: 90
+upload_size_cap: null

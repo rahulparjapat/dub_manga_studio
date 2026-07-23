@@ -1,0 +1,17 @@
+# Mock worker for testing (CPU-only)
+FROM chatterbox-manga-studio/worker-base:latest AS mock-worker
+
+ENV MODEL_ID=mock \
+    TTS_COMPILE=0 \
+    TTS_PRECISION=float16 \
+    PYTHON_VERSION=3.11
+
+# Install minimal dependencies for mock
+RUN uv pip install --no-cache-dir \
+    numpy>=1.26,<2.1 \
+    soundfile>=0.12.1
+
+# Copy mock worker implementation
+COPY workers/mock_worker.py ./workers/mock_worker.py
+
+CMD ["python", "-m", "workers.mock_worker", "--port", "8100"]

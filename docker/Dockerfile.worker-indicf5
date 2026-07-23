@@ -1,0 +1,25 @@
+# IndicF5 Worker
+FROM chatterbox-manga-studio/worker-base:latest AS indicf5
+
+ENV MODEL_ID=indicf5 \
+    TTS_COMPILE=0 \
+    TTS_PRECISION=float16 \
+    PYTHON_VERSION=3.10
+
+# Install IndicF5 specific dependencies
+RUN uv pip install --no-cache-dir \
+    torch==2.2.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121 \
+    "transformers==4.49.0" \
+    "accelerate==0.33.0" \
+    "numpy==1.26.4" \
+    pydub==0.25.1 \
+    soundfile==0.12.1 \
+    safetensors==0.4.3 \
+    huggingface_hub==0.29.0 \
+    scipy==1.13.0 \
+    sentencepiece==0.2.0 \
+    protobuf==4.25.3 \
+    git+https://github.com/ai4bharat/IndicF5.git \
+    ai4bharat-transliteration
+
+CMD ["python", "-m", "workers.worker_indicf5", "--port", "8110"]

@@ -1,0 +1,26 @@
+# VoxCPM2 Worker - L4 (BF16, compile, FA2, Nano-vLLM)
+FROM chatterbox-manga-studio/worker-base:latest AS voxcpm2-l4
+
+ENV MODEL_ID=voxcpm2 \
+    TTS_COMPILE=1 \
+    TTS_PRECISION=bfloat16 \
+    VOXCPM_VLLM=1 \
+    VOXCPM_FLASH_ATTN=1 \
+    VOXCPM_BATCH_SIZE=4 \
+    PYTHON_VERSION=3.11
+
+# Install VoxCPM2 specific dependencies
+RUN uv pip install --no-cache-dir \
+    voxcpm \
+    soundfile \
+    "numpy==1.26.4" \
+    librosa \
+    torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+
+# Install Nano-vLLM for accelerated inference
+RUN uv pip install --no-cache-dir "git+https://github.com/a710128/nanovllm-voxcpm.git"
+
+# Install flash-attn for FA2 support
+RUN uv pip install --no-cache-dir flash-attn --no-build-isolation
+
+CMD ["python", "-m", "workers.worker_voxcpm2", "--port", "8120"]

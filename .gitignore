@@ -1,0 +1,20 @@
+# Secrets — NEVER commit these
+hf_token.txt
+provider_keys.json
+.netrc
+.git-credentials
+
+# Runtime data / caches / envs
+data/projects/
+data/input/
+data/output/
+data/uploads/
+data/cache/
+data/voices/
+data/bgm/
+data/prompts_store.json
+workers_envs/
+.venv_app/
+.venv/
+__pycache__/
+*.pyc
