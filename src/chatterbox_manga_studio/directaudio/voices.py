@@ -122,11 +122,11 @@ def _best_window(x, sr, target_s: float = 25.0):
     step = int(0.5 * sr)  # slide in 0.5s hops
     frame = int(0.05 * sr)  # 50ms RMS frames
     # precompute frame energies once
-    energies = []
+    energy_list: list[float] = []
     for i in range(0, n - frame, frame):
         seg = x[i : i + frame]
-        energies.append(float(np.sqrt(np.mean(seg * seg)) if seg.size else 0.0))
-    energies = np.asarray(energies)
+        energy_list.append(float(np.sqrt(np.mean(seg * seg)) if seg.size else 0.0))
+    energies = np.asarray(energy_list)
     fpw = max(1, win // frame)  # frames per window
     best_start, best_score = 0, -1.0
     for s in range(0, n - win, step):

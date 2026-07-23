@@ -168,7 +168,7 @@ class TranslationNode(PipelineNode):
         else:
             if not provider:
                 raise PipelineNodeError("TranslationNode requires provider or adapted_lines")
-            response = await asyncio.to_thread(
+            legacy_response: Any = await asyncio.to_thread(
                 cast(Any, legacy_providers.adapt),
                 provider,
                 model,
@@ -176,9 +176,11 @@ class TranslationNode(PipelineNode):
                 user_content,
                 True,
             )
-            if not response.get("ok"):
-                raise PipelineNodeError(response.get("error") or "translation provider failed")
-            raw_text = str(response.get("text", ""))
+            if not legacy_response.get("ok"):
+                raise PipelineNodeError(
+                    legacy_response.get("error") or "translation provider failed"
+                )
+            raw_text = str(legacy_response.get("text", ""))
 
         lines, warnings = (
             quality.parse_cue_response(raw_text, expected) if expected else ([raw_text], [])
