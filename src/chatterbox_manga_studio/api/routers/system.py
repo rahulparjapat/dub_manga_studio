@@ -20,6 +20,7 @@ async def health(state=Depends(get_state)):
         "providers": await state.providers.snapshot(),
         "workers": await state.workers.snapshot(),
         "gpus": await state.gpus.snapshot(),
+        "startup": state.startup_health,
     })
 
 
