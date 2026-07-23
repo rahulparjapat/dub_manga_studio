@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#020617"/>
+  <rect x="80" y="80" width="1120" height="560" rx="32" fill="#0f172a" stroke="#334155"/>
+  <text x="640" y="340" text-anchor="middle" fill="#67e8f9" font-family="Arial, sans-serif" font-size="44">Chatterbox Manga Studio</text>
+  <text x="640" y="400" text-anchor="middle" fill="#94a3b8" font-family="Arial, sans-serif" font-size="28">Screenshot placeholder</text>
+</svg>

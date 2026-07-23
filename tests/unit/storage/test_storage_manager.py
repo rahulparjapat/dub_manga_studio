@@ -134,7 +134,7 @@ class TestFilesystemObjectStore:
         meta = await store.copy("source.txt", "dest.txt")
 
         assert meta.key == "dest.txt"
-        assert meta.size_bytes == 10  # "source data"
+        assert meta.size_bytes == len(b"source data")
 
         # Original still exists
         assert await store.exists("source.txt")
@@ -295,7 +295,7 @@ class TestStorageManager:
     async def test_object_store_delegation(self, manager):
         # Put via manager
         meta = await manager.put_object("test.txt", b"via manager")
-        assert meta.size_bytes == 10
+        assert meta.size_bytes == len(b"via manager")
 
         # Get via manager
         data, meta = await manager.get_object("test.txt")

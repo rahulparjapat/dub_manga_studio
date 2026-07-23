@@ -1,0 +1,2 @@
+import { PageHeader } from '../../components/PageHeader';
+export function AudioPreview() { return <><PageHeader title="Audio Preview" description="Preview generated cue audio and masters once backend export artifacts are available." /><section className="card p-4"><audio controls className="w-full" /><p className="mt-3 text-sm text-slate-400">Paste exported audio URLs or connect artifact download endpoints in Phase 6.</p></section></>; }
