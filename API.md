@@ -120,6 +120,15 @@ PATCH /providers/{provider}/priority
 GET   /providers/failover
 ```
 
+## Artifacts
+
+```text
+GET /artifacts/download?object_key=...
+GET /artifacts/download?path=...
+```
+
+Filesystem path downloads are restricted to the repository data directory.
+
 ## System
 
 ```text

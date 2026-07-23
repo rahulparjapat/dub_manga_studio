@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from ..common.logging_util import get_logger
 from .middleware import install_exception_handlers, install_middleware
 from ..services.observability import metrics as metrics_registry
-from .routers import jobs, models, pipeline, projects, providers, system, uploads, workers
+from .routers import artifacts, jobs, models, pipeline, projects, providers, system, uploads, workers
 from .state import APIState, build_api_state
 from .websocket.manager import WebSocketManager
 from .websocket.routes import router as websocket_router
@@ -67,6 +67,7 @@ def create_app(
     install_middleware(app)
     install_exception_handlers(app)
     api = "/api/v1"
+    app.include_router(artifacts.router, prefix=api)
     app.include_router(jobs.router, prefix=api)
     app.include_router(projects.router, prefix=api)
     app.include_router(uploads.router, prefix=api)
