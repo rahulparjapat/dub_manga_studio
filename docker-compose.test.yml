@@ -43,7 +43,7 @@ services:
   # Mock GPU worker for testing (CPU-only)
   mock-worker:
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.mock-worker
     environment:
       - MODEL_ID=mock
@@ -56,7 +56,7 @@ services:
 
   api:
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.api
     environment:
       - DATABASE_URL=postgresql://test:test@postgres:5432/chatterbox_test
