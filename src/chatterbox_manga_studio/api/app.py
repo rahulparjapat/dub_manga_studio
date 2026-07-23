@@ -52,7 +52,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(
         title="Chatterbox Manga Studio API",
-        version="2.0.0",
+        version="1.0.0",
         description="Lightning-native backend API for Chatterbox Manga Studio",
         docs_url="/docs",
         redoc_url="/redoc",

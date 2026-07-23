@@ -32,7 +32,7 @@ class MetricsRegistry:
             self._gauges[(name, _labels(labels))] = value
 
     def render_prometheus(self) -> str:
-        lines = ["# HELP cms_info Chatterbox Manga Studio application info", "# TYPE cms_info gauge", 'cms_info{version="2.0.0"} 1']
+        lines = ["# HELP cms_info Chatterbox Manga Studio application info", "# TYPE cms_info gauge", 'cms_info{version="1.0.0"} 1']
         with self._lock:
             for (name, labels), value in sorted(self._counters.items()):
                 lines.append(f"# TYPE {name} counter")
