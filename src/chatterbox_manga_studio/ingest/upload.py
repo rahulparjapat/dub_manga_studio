@@ -181,7 +181,7 @@ def download_drive(url: str, project_id: str) -> dict:
     dst_dir = project_dir(project_id) / "source"
     dst_dir.mkdir(parents=True, exist_ok=True)
     try:
-        out = gdown.download(url=url, output=str(dst_dir) + "/", fuzzy=True, quiet=False)
+        out = gdown.download(url=url, output=str(dst_dir) + "/", quiet=False)
         if not out:
             return {"ok": False, "error": "gdown returned no file (check share link)."}
         return {"ok": True, "path": out}
