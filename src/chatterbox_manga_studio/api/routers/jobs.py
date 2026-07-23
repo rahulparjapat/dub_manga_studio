@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...services.job_scheduler import JobScheduler, JobStatus
 from ..dependencies import get_jobs, get_storage
@@ -14,14 +14,22 @@ def _job_response(job) -> JobResponse:
 
 
 @router.post("", response_model=JobResponse, status_code=201)
-async def create_job(request: JobCreateRequest, jobs: JobScheduler = Depends(get_jobs), storage=Depends(get_storage)):
+async def create_job(
+    request: JobCreateRequest, jobs: JobScheduler = Depends(get_jobs), storage=Depends(get_storage)
+):
     if request.idempotency_key:
         key = f"idempotency:jobs:{request.idempotency_key}"
         existing = await storage.get_kv(key)
         if existing:
             job = await jobs.require_job(existing)
             return _job_response(job)
-    job = await jobs.create_job(request.type, request.payload, priority=request.priority, max_attempts=request.max_attempts, metadata=request.metadata)
+    job = await jobs.create_job(
+        request.type,
+        request.payload,
+        priority=request.priority,
+        max_attempts=request.max_attempts,
+        metadata=request.metadata,
+    )
     if request.idempotency_key:
         await storage.set_kv(f"idempotency:jobs:{request.idempotency_key}", job.id, ttl=24 * 3600)
     return _job_response(job)
@@ -36,7 +44,11 @@ async def get_job(job_id: str, jobs: JobScheduler = Depends(get_jobs)):
 
 
 @router.get("", response_model=list[JobResponse])
-async def list_jobs(status_filter: str | None = Query(None, alias="status"), limit: int = Query(100, ge=1, le=1000), jobs: JobScheduler = Depends(get_jobs)):
+async def list_jobs(
+    status_filter: str | None = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=1000),
+    jobs: JobScheduler = Depends(get_jobs),
+):
     status = JobStatus(status_filter) if status_filter else None
     return [_job_response(job) for job in await jobs.list_jobs(status=status, limit=limit)]
 

@@ -6,13 +6,15 @@ Warns (does not block) if a reference clip is likely to hurt output quality:
   - not mono / odd sample rate (informational)
 Returns (ok, message). ok=False means 'strongly discouraged', but caller may proceed.
 """
+
 from __future__ import annotations
 
 
 def check_reference(path: str) -> tuple[bool, str]:
     try:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
+
         info = sf.info(path)
         dur = info.frames / info.samplerate
         data, sr = sf.read(path)
@@ -20,7 +22,7 @@ def check_reference(path: str) -> tuple[bool, str]:
         if arr.ndim > 1:
             arr = arr.mean(axis=1)
         peak = float(np.max(np.abs(arr))) if arr.size else 0.0
-        rms = float(np.sqrt(np.mean(arr ** 2))) if arr.size else 0.0
+        rms = float(np.sqrt(np.mean(arr**2))) if arr.size else 0.0
 
         issues = []
         if dur < 3:

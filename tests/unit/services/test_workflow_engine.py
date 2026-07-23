@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from chatterbox_manga_studio.services.events import EventBus, EventType
-from chatterbox_manga_studio.services.storage_manager import StorageManager, create_filesystem_stores
+from chatterbox_manga_studio.services.storage_manager import (
+    StorageManager,
+    create_filesystem_stores,
+)
 from chatterbox_manga_studio.services.workflow_engine import (
     RetryPolicy,
     WorkflowDefinition,
@@ -43,7 +46,10 @@ async def test_workflow_engine_runs_dependencies_and_checkpoints(engine):
     eng.register_handler("second", second)
     definition = WorkflowDefinition(
         name="demo",
-        nodes=[WorkflowNode(id="a", handler="first"), WorkflowNode(id="b", handler="second", dependencies=["a"])],
+        nodes=[
+            WorkflowNode(id="a", handler="first"),
+            WorkflowNode(id="b", handler="second", dependencies=["a"]),
+        ],
     )
 
     run = await eng.execute(definition)
@@ -66,7 +72,10 @@ async def test_workflow_engine_retries_node(engine):
 
     eng.register_handler("flaky", flaky)
     run = await eng.execute(
-        WorkflowDefinition(name="retry", nodes=[WorkflowNode(id="n", handler="flaky", retry=RetryPolicy(max_attempts=2))])
+        WorkflowDefinition(
+            name="retry",
+            nodes=[WorkflowNode(id="n", handler="flaky", retry=RetryPolicy(max_attempts=2))],
+        )
     )
 
     assert run.status == WorkflowStatus.COMPLETED
@@ -81,7 +90,9 @@ async def test_workflow_engine_marks_failed_on_exhausted_retry(engine):
         raise RuntimeError("boom")
 
     eng.register_handler("bad", bad)
-    run = await eng.execute(WorkflowDefinition(name="fail", nodes=[WorkflowNode(id="n", handler="bad")]))
+    run = await eng.execute(
+        WorkflowDefinition(name="fail", nodes=[WorkflowNode(id="n", handler="bad")])
+    )
 
     assert run.status == WorkflowStatus.FAILED
     assert run.node_states["n"].error == "boom"

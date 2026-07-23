@@ -20,7 +20,9 @@ The fish-speech library API differs across releases. This worker calls the libra
 high-level TTS if available, else shells to the documented tool scripts. On any mismatch it
 raises a clear error so the app marks Fish unavailable (never crashes the whole app).
 """
+
 from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
@@ -42,14 +44,17 @@ class FishWorker(BaseWorker):
     def load_model(self):
         # Fish loads per-call in the reference pipeline; we validate presence here.
         import torch  # noqa
+
         if not os.path.isdir(CKPT_DIR):
             # Weights are downloaded lazily by the installer/first-load step.
             from huggingface_hub import snapshot_download
+
             snapshot_download("fishaudio/s2-pro", local_dir=CKPT_DIR)
         self._int4 = os.environ.get("FISH_INT4", "1") == "1"
         try:
             # Preferred: high-level library entry (if this fish-speech release exposes it)
             import fish_speech  # noqa
+
             self._have_lib = True
         except Exception:
             self._have_lib = False
@@ -62,8 +67,9 @@ class FishWorker(BaseWorker):
         return text
 
     def synthesize(self, req: GenRequest) -> float:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
+
         text = self._apply_tags(req)
 
         # Prefer the VERIFIED CLI path when int4 (NF4) is requested — that is the
@@ -75,6 +81,7 @@ class FishWorker(BaseWorker):
         if getattr(self, "_have_lib", False):
             try:
                 import fish_speech
+
                 model = fish_speech.load_model(CKPT_DIR)  # type: ignore[attr-defined]
                 kwargs = {}
                 if req.reference_wav:
@@ -104,32 +111,41 @@ class FishWorker(BaseWorker):
              showed 'इस आदमी _ ह◆ली…' — a classic non-UTF-8 locale mangle).
         """
         import subprocess
+
         env = dict(os.environ)
         env["PYTHONUTF8"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
         env["LC_ALL"] = env.get("LC_ALL", "C.UTF-8")
         env["LANG"] = env.get("LANG", "C.UTF-8")
-        proc = subprocess.run(cmd, cwd=workdir, env=env,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, encoding="utf-8", errors="replace")
+        proc = subprocess.run(
+            cmd,
+            cwd=workdir,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if proc.returncode != 0:
             tail = "\n".join((proc.stdout or "").strip().splitlines()[-25:])
             step = os.path.basename(cmd[1]) if len(cmd) > 1 else "fish"
             raise RuntimeError(
                 f"Fish step '{step}' failed (exit {proc.returncode}). "
-                f"Real error from Fish:\n{tail or '(no output captured)'}")
+                f"Real error from Fish:\n{tail or '(no output captured)'}"
+            )
         return proc.stdout or ""
 
     def _synthesize_cli(self, req: GenRequest, text: str) -> float:
-        import shutil
         import glob
-        import soundfile as sf
+        import shutil
+
         import numpy as np
+        import soundfile as sf
 
         # Sanitize text to clean UTF-8 (drop stray control chars that would break
         # the tokenizer); keep all real Devanagari/Latin/punctuation.
-        text = "".join(ch for ch in (text or "")
-                       if ch == "\n" or ord(ch) >= 0x20).strip()
+        text = "".join(ch for ch in (text or "") if ch == "\n" or ord(ch) >= 0x20).strip()
         if not text:
             raise RuntimeError("Fish: empty text after cleanup — nothing to speak.")
 
@@ -141,14 +157,29 @@ class FishWorker(BaseWorker):
         prompt_tokens = "fake.npy"
         # 1) reference -> VQ tokens (optional)
         if req.reference_wav:
-            self._run_fish([sys.executable, str(FISH_SRC / "fish_speech" / "models" / "dac" / "inference.py"),
-                            "-i", req.reference_wav, "--checkpoint-path", codec], workdir)
+            self._run_fish(
+                [
+                    sys.executable,
+                    str(FISH_SRC / "fish_speech" / "models" / "dac" / "inference.py"),
+                    "-i",
+                    req.reference_wav,
+                    "--checkpoint-path",
+                    codec,
+                ],
+                workdir,
+            )
         # 2) text -> semantic. VERIFIED flags (fishaudio/fish-speech docs): --text,
         #    --prompt-text, --prompt-tokens, --half, --compile. There is NO --bnb4
         #    flag in this release — passing it caused argparse to exit(2) (the bug).
         #    On a non-bf16 GPU we use --half (fp16); bf16 GPUs (L4) can omit it.
-        cmd = [sys.executable, str(FISH_SRC / "fish_speech" / "models" / "text2semantic" / "inference.py"),
-               "--text", text, "--checkpoint-path", str(CKPT_DIR)]
+        cmd = [
+            sys.executable,
+            str(FISH_SRC / "fish_speech" / "models" / "text2semantic" / "inference.py"),
+            "--text",
+            text,
+            "--checkpoint-path",
+            str(CKPT_DIR),
+        ]
         if req.reference_wav and req.reference_text:
             cmd += ["--prompt-text", req.reference_text, "--prompt-tokens", prompt_tokens]
         # --half is safe on both fp16 and bf16 GPUs; keep it for broad compatibility.
@@ -157,10 +188,21 @@ class FishWorker(BaseWorker):
         # 3) semantic -> waveform. Per docs, decode takes -i codes_N.npy (+ codec path).
         codes = sorted(glob.glob(os.path.join(workdir, "codes_*.npy")))
         if not codes:
-            raise RuntimeError("Fish: no semantic codes (codes_*.npy) were produced "
-                               "by text2semantic — see the captured error above.")
-        self._run_fish([sys.executable, str(FISH_SRC / "fish_speech" / "models" / "dac" / "inference.py"),
-                        "-i", codes[-1], "--checkpoint-path", codec], workdir)
+            raise RuntimeError(
+                "Fish: no semantic codes (codes_*.npy) were produced "
+                "by text2semantic — see the captured error above."
+            )
+        self._run_fish(
+            [
+                sys.executable,
+                str(FISH_SRC / "fish_speech" / "models" / "dac" / "inference.py"),
+                "-i",
+                codes[-1],
+                "--checkpoint-path",
+                codec,
+            ],
+            workdir,
+        )
         produced = os.path.join(workdir, "fake.wav")
         if not os.path.exists(produced):
             raise RuntimeError("Fish: decode step produced no fake.wav.")

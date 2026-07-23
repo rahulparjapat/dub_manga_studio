@@ -21,7 +21,9 @@ async def worker_health(workers=Depends(get_workers)):
 
 @router.get("/capabilities", response_model=list[dict])
 async def worker_capabilities(workers=Depends(get_workers)):
-    return [worker.capabilities.model_dump(mode="json") for worker in await workers.discover_workers()]
+    return [
+        worker.capabilities.model_dump(mode="json") for worker in await workers.discover_workers()
+    ]
 
 
 @router.post("/reservations", response_model=dict, status_code=201)

@@ -39,7 +39,9 @@ async def download_artifact(
         try:
             candidate.relative_to(data_root)
         except ValueError as exc:
-            raise HTTPException(status_code=403, detail="artifact path is outside data directory") from exc
+            raise HTTPException(
+                status_code=403, detail="artifact path is outside data directory"
+            ) from exc
         if not candidate.exists() or not candidate.is_file():
             raise HTTPException(status_code=404, detail="artifact file not found")
         return FileResponse(candidate, filename=candidate.name)

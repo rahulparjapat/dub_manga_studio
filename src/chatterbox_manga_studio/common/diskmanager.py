@@ -9,25 +9,39 @@ Strategy (locked with user):
 
 This keeps peak disk to ONE model at a time, fitting the 10 GB budget.
 """
-from __future__ import annotations
-import shutil
-import subprocess
-from pathlib import Path
 
-from .paths import (WORKERS_ENVS, HF_CACHE, WHISPER_CACHE, PROJECT_ROOT,
-                    PROJECTS, OUTPUT, VOICES, INPUT, DATA)
-from .config import load_config, model_cfg
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+from typing import Any
+
 from .logging_util import get_logger
+from .paths import (
+    DATA,
+    HF_CACHE,
+    INPUT,
+    OUTPUT,
+    PROJECT_ROOT,
+    PROJECTS,
+    VOICES,
+    WHISPER_CACHE,
+    WORKERS_ENVS,
+)
 
 log = get_logger("disk")
 
 # Approx peak disk (GB) each model needs (venv + weights + working room).
 MODEL_PEAK_GB = {
-    "chatterbox": 7, "indicf5": 7, "voxcpm2": 10, "vibevoice": 9, "fish": 15,
-    "qwen3tts": 7,   # 1.7B ~4.5GB weights + install/cache headroom
+    "chatterbox": 7,
+    "indicf5": 7,
+    "voxcpm2": 10,
+    "vibevoice": 9,
+    "fish": 15,
+    "qwen3tts": 7,  # 1.7B ~4.5GB weights + install/cache headroom
 }
 BUDGET_GB = 10.0
-SAFETY_GB = 1.0   # keep 1 GB headroom
+SAFETY_GB = 1.0  # keep 1 GB headroom
 
 # ---- SESSION MODE (verified billing strategy) --------------------------------
 # Lightning bills persistent Drive storage above 10 GB, measured on a DAILY snapshot.
@@ -40,7 +54,7 @@ SAFETY_GB = 1.0   # keep 1 GB headroom
 # so temporary >10 GB use (e.g. VoxCPM2 ~10 GB) is fine. Auto-cleanup-on-exit keeps
 # the PERSISTENT footprint under budget. This means models "just work" without the
 # user flipping a toggle every time. (Physical disk room is still checked.)
-_SESSION = {"mode": True, "peak_gb": 0.0}
+_SESSION: dict[str, Any] = {"mode": True, "peak_gb": 0.0}
 
 
 def set_session_mode(on: bool) -> None:
@@ -66,19 +80,21 @@ def set_testing_mode(on: bool) -> None:
 
 def testing_mode() -> bool:
     return _TESTING["on"]
+
+
 # ------------------------------------------------------------------------------
 
 # Whisper stays CACHED on disk permanently (user requirement). It is NEVER
 # disk-evicted by any cleanup path — it only unloads from VRAM after use.
 # faster-whisper (CTranslate2, no torch) is tiny (~1 GB venv + ~1.5 GB INT8 weights).
 PROTECTED = {"whisper"}
-WHISPER_RESIDENT_GB = 3.0   # reserve this so a TTS model never overfills disk
+WHISPER_RESIDENT_GB = 3.0  # reserve this so a TTS model never overfills disk
 
 
-def disk_free_gb(path: str | Path = None) -> float:
+def disk_free_gb(path: str | Path | None = None) -> float:
     p = str(path or PROJECT_ROOT)
     total, used, free = shutil.disk_usage(p)
-    return free / (1024 ** 3)
+    return free / (1024**3)
 
 
 def dir_size_gb(path: Path) -> float:
@@ -91,7 +107,7 @@ def dir_size_gb(path: Path) -> float:
                 total += f.stat().st_size
         except Exception:
             pass
-    return total / (1024 ** 3)
+    return total / (1024**3)
 
 
 def installed_model_venvs() -> list[str]:
@@ -112,32 +128,43 @@ def fits_budget(model_id: str) -> tuple[bool, str]:
     # if the PHYSICAL disk genuinely can't hold the weights (that would fail anyway).
     if testing_mode():
         if peak + SAFETY_GB > free:
-            return False, (f"🧪 Testing mode: '{model_id}' needs ~{peak} GB but only "
-                           f"{free:.1f} GB is physically free — free space first.")
-        return True, (f"🧪 Testing mode: budget checks bypassed for '{model_id}' "
-                      f"(~{peak} GB, {free:.1f} GB free).")
+            return False, (
+                f"🧪 Testing mode: '{model_id}' needs ~{peak} GB but only "
+                f"{free:.1f} GB is physically free — free space first."
+            )
+        return True, (
+            f"🧪 Testing mode: budget checks bypassed for '{model_id}' "
+            f"(~{peak} GB, {free:.1f} GB free)."
+        )
 
     # SESSION MODE: temporary usage is fine as long as the physical disk has room.
     # Persistent-storage billing is handled by cleanup-on-exit, not by this cap.
     if session_mode():
         if peak + SAFETY_GB > free:
-            return False, (f"'{model_id}' needs ~{peak} GB but only {free:.1f} GB free "
-                           f"on the Studio disk right now. Free space or evict a model.")
-        return True, (f"Session mode: ~{peak} GB temporary use OK ({free:.1f} GB free). "
-                      f"Remember to run 'Cleanup for exit' before stopping the Studio.")
+            return False, (
+                f"'{model_id}' needs ~{peak} GB but only {free:.1f} GB free "
+                f"on the Studio disk right now. Free space or evict a model."
+            )
+        return True, (
+            f"Session mode: ~{peak} GB temporary use OK ({free:.1f} GB free). "
+            f"Remember to run 'Cleanup for exit' before stopping the Studio."
+        )
 
     # NORMAL 10 GB persistent budget (Whisper stays resident).
     effective_budget = BUDGET_GB - WHISPER_RESIDENT_GB
     if peak > effective_budget:
-        return False, (f"'{model_id}' needs ~{peak} GB, but with Whisper kept cached "
-                       f"(~{WHISPER_RESIDENT_GB:.0f} GB) only ~{effective_budget:.0f} GB is "
-                       f"free in the {BUDGET_GB:.0f} GB persistent budget. "
-                       f"Turn ON Session Mode to run it temporarily, or use IndicF5/Chatterbox.")
+        return False, (
+            f"'{model_id}' needs ~{peak} GB, but with Whisper kept cached "
+            f"(~{WHISPER_RESIDENT_GB:.0f} GB) only ~{effective_budget:.0f} GB is "
+            f"free in the {BUDGET_GB:.0f} GB persistent budget. "
+            f"Turn ON Session Mode to run it temporarily, or use IndicF5/Chatterbox."
+        )
     return True, f"~{peak} GB needed, {free:.1f} GB free (Whisper stays cached)."
 
 
-def evict_model(model_id: str, remove_weights: bool = True, remove_venv: bool = True,
-                force: bool = False) -> float:
+def evict_model(
+    model_id: str, remove_weights: bool = True, remove_venv: bool = True, force: bool = False
+) -> float:
     """Delete a model's venv and/or its cached weights. Returns GB freed.
     Protected models (Whisper) are NOT evicted unless force=True."""
     if model_id in PROTECTED and not force:
@@ -209,8 +236,10 @@ def make_room_for(model_id: str) -> dict:
         "freed_gb": round(freed, 2),
         "free_gb": round(free_now, 2),
         "needed_gb": peak,
-        "message": (f"Freed {freed:.1f} GB; {free_now:.1f} GB free for "
-                    f"'{model_id}' (~{peak} GB needed)."),
+        "message": (
+            f"Freed {freed:.1f} GB; {free_now:.1f} GB free for "
+            f"'{model_id}' (~{peak} GB needed)."
+        ),
     }
 
 
@@ -220,13 +249,17 @@ def cleanup_after_dub(model_id: str, keep_venv: bool = True) -> dict:
     weights if needed). Set keep_venv=False only when you truly need the ~5 GB venv space.
     """
     freed = evict_model(model_id, remove_weights=True, remove_venv=not keep_venv)
-    return {"freed_gb": freed, "free_gb": round(disk_free_gb(), 2),
-            "message": f"Post-dub cleanup freed {freed:.1f} GB "
-                       f"({'venv kept' if keep_venv else 'venv removed'}). "
-                       f"{disk_free_gb():.1f} GB free now."}
+    return {
+        "freed_gb": freed,
+        "free_gb": round(disk_free_gb(), 2),
+        "message": f"Post-dub cleanup freed {freed:.1f} GB "
+        f"({'venv kept' if keep_venv else 'venv removed'}). "
+        f"{disk_free_gb():.1f} GB free now.",
+    }
 
 
 # ---- CLEANUP FOR EXIT (guarantee persistent footprint < 10 GB before stopping) ----
+
 
 def persistent_footprint_gb() -> dict:
     """Report all persistent storage, separating protected user data from runtime data.
@@ -251,8 +284,12 @@ def persistent_footprint_gb() -> dict:
     parts["protected:code_config_app"] = round(code_total, 2)
     total = round(sum(parts.values()), 2)
     protected = round(sum(v for k, v in parts.items() if k.startswith("protected:")), 2)
-    return {"total_gb": total, "protected_gb": protected, "parts": parts,
-            "free_gb": round(disk_free_gb(), 2)}
+    return {
+        "total_gb": total,
+        "protected_gb": protected,
+        "parts": parts,
+        "free_gb": round(disk_free_gb(), 2),
+    }
 
 
 def cleanup_for_exit(keep_whisper: bool = True) -> dict:
@@ -294,8 +331,12 @@ def cleanup_for_exit(keep_whisper: bool = True) -> dict:
     for runtime_dir in (DATA / "logs", INPUT):
         if runtime_dir.exists():
             for item in runtime_dir.iterdir():
-                freed += dir_size_gb(item) if item.is_dir() else (item.stat().st_size / (1024 ** 3))
-                shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink(missing_ok=True)
+                freed += dir_size_gb(item) if item.is_dir() else (item.stat().st_size / (1024**3))
+                (
+                    shutil.rmtree(item, ignore_errors=True)
+                    if item.is_dir()
+                    else item.unlink(missing_ok=True)
+                )
 
     fp = persistent_footprint_gb()
     under = fp["total_gb"] < BUDGET_GB
@@ -304,7 +345,9 @@ def cleanup_for_exit(keep_whisper: bool = True) -> dict:
         "removed": removed,
         "persistent_gb": fp["total_gb"],
         "under_budget": under,
-        "message": (f"Cleanup for exit freed {freed:.1f} GB. Protected projects/outputs/voices/code: "
-                    f"{fp['protected_gb']:.1f} GB. Persistent footprint now {fp['total_gb']:.1f} GB "
-                    f"({'✅ under 10 GB — safe to stop' if under else '⚠ still over 10 GB — protected user data itself may need manual archive/delete'})."),
+        "message": (
+            f"Cleanup for exit freed {freed:.1f} GB. Protected projects/outputs/voices/code: "
+            f"{fp['protected_gb']:.1f} GB. Persistent footprint now {fp['total_gb']:.1f} GB "
+            f"({'✅ under 10 GB — safe to stop' if under else '⚠ still over 10 GB — protected user data itself may need manual archive/delete'})."
+        ),
     }

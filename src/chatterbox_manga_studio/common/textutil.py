@@ -1,8 +1,11 @@
 """Text utilities — long-cue splitting (M5) to avoid model context/VRAM overflow."""
-from __future__ import annotations
-import re
 
-MAX_CHARS = 400   # split cues longer than this at sentence boundaries
+from __future__ import annotations
+
+import re
+from typing import Any
+
+MAX_CHARS = 400  # split cues longer than this at sentence boundaries
 
 
 def split_long_text(text: str, max_chars: int = MAX_CHARS) -> list[str]:
@@ -45,8 +48,9 @@ def split_long_text(text: str, max_chars: int = MAX_CHARS) -> list[str]:
     return [c for c in chunks if c.strip()] or [text[:max_chars]]
 
 
-def merge_short_cues(cues: list[dict], target_seconds: float = 7.0,
-                     max_seconds: float = 12.0, max_chars: int = 220) -> list[dict]:
+def merge_short_cues(
+    cues: list[dict], target_seconds: float = 7.0, max_seconds: float = 12.0, max_chars: int = 220
+) -> list[dict]:
     """Merge tiny adjacent transcript cues into fewer natural-length ones.
 
     Whisper's VAD often splits at every pause -> many 1-2s cues (e.g. 38/min),
@@ -59,7 +63,7 @@ def merge_short_cues(cues: list[dict], target_seconds: float = 7.0,
     if not cues:
         return []
     merged: list[dict] = []
-    cur = None
+    cur: dict[str, Any] | None = None
     for c in cues:
         start = float(c.get("start", 0.0) or 0.0)
         end = float(c.get("end", start) or start)

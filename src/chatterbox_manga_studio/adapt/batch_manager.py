@@ -1,10 +1,13 @@
 """Translation Batch Manager — 6 main batches, versions, retry/restore, pause on quota."""
+
 from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
-from ..common.paths import edition_dir
+
 from ..common.logging_util import get_logger
+from ..common.paths import edition_dir
 
 log = get_logger("batch")
 
@@ -15,9 +18,14 @@ def _dir(project_id: str, target: str) -> Path:
     return d
 
 
-def _plan_path(project_id, target): return _dir(project_id, target) / "translation_batches.json"
+def _plan_path(project_id, target):
+    return _dir(project_id, target) / "translation_batches.json"
+
+
 def _ver_dir(project_id, target):
-    d = _dir(project_id, target) / "translation_batch_versions"; d.mkdir(exist_ok=True); return d
+    d = _dir(project_id, target) / "translation_batch_versions"
+    d.mkdir(exist_ok=True)
+    return d
 
 
 def create_plan(project_id: str, target: str, cues: list[dict], main_batches: int = 6) -> dict:
@@ -28,15 +36,29 @@ def create_plan(project_id: str, target: str, cues: list[dict], main_batches: in
         lo, hi = b * per, min((b + 1) * per, n)
         if lo >= n:
             break
-        batches.append({
-            "batch": b + 1, "cue_lo": lo, "cue_hi": hi, "cue_count": hi - lo,
-            "status": "Pending", "active_version": 0, "provider": "", "model": "",
-            "context_status": "OK", "error": "",
-        })
-    plan = {"created": time.time(), "main_batches": len(batches),
-            "total_cues": n, "batches": batches}
+        batches.append(
+            {
+                "batch": b + 1,
+                "cue_lo": lo,
+                "cue_hi": hi,
+                "cue_count": hi - lo,
+                "status": "Pending",
+                "active_version": 0,
+                "provider": "",
+                "model": "",
+                "context_status": "OK",
+                "error": "",
+            }
+        )
+    plan = {
+        "created": time.time(),
+        "main_batches": len(batches),
+        "total_cues": n,
+        "batches": batches,
+    }
     _plan_path(project_id, target).write_text(
-        json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return plan
 
 
@@ -47,17 +69,31 @@ def load_plan(project_id: str, target: str) -> dict | None:
 
 def save_plan(project_id: str, target: str, plan: dict):
     _plan_path(project_id, target).write_text(
-        json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
-def save_batch_version(project_id: str, target: str, batch_no: int, lines: list[str],
-                       provider: str, model: str) -> int:
+def save_batch_version(
+    project_id: str, target: str, batch_no: int, lines: list[str], provider: str, model: str
+) -> int:
     d = _ver_dir(project_id, target)
     existing = sorted(d.glob(f"b{batch_no}_v*.json"))
     ver = len(existing) + 1
-    (d / f"b{batch_no}_v{ver}.json").write_text(json.dumps(
-        {"batch": batch_no, "version": ver, "provider": provider, "model": model,
-         "lines": lines, "ts": time.time()}, indent=2, ensure_ascii=False), encoding="utf-8")
+    (d / f"b{batch_no}_v{ver}.json").write_text(
+        json.dumps(
+            {
+                "batch": batch_no,
+                "version": ver,
+                "provider": provider,
+                "model": model,
+                "lines": lines,
+                "ts": time.time(),
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     return ver
 
 
@@ -107,8 +143,7 @@ def assemble_adaptation(project_id: str, target: str) -> list[str]:
     return lines
 
 
-def get_batch_text(project_id: str, target: str, batch_no: int,
-                   version: int | None = None) -> str:
+def get_batch_text(project_id: str, target: str, batch_no: int, version: int | None = None) -> str:
     """Return the text of a specific batch version (or its active version)."""
     if version is None:
         plan = load_plan(project_id, target)

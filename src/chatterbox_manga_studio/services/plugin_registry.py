@@ -4,6 +4,7 @@ Existing Whisper/TTS worker implementations are not rewritten in Phase 1. They
 are wrapped as plugins exposing a capability registry used by ModelManager and
 future pipeline nodes.
 """
+
 from __future__ import annotations
 
 import importlib.metadata
@@ -145,7 +146,12 @@ class PluginRegistry:
         requested_language = language.lower() if language else None
         matches: list[ModelCapabilities] = []
         for cap in self.list_models():
-            if requested_language and cap.supported_languages and "*" not in cap.supported_languages and requested_language not in cap.supported_languages:
+            if (
+                requested_language
+                and cap.supported_languages
+                and "*" not in cap.supported_languages
+                and requested_language not in cap.supported_languages
+            ):
                 continue
             if voice_clone is not None and cap.supports_voice_clone != voice_clone:
                 continue
@@ -249,7 +255,10 @@ def build_registry_from_config(event_bus: EventBus | None = None) -> PluginRegis
 
     cfg = load_config()
     registry = PluginRegistry(event_bus=event_bus)
-    targets = [target.get("key") or target.get("value") or target.get("label", "").lower() for target in cfg.get("targets", [])]
+    targets = [
+        target.get("key") or target.get("value") or target.get("label", "").lower()
+        for target in cfg.get("targets", [])
+    ]
     target_languages = [target for target in targets if target]
     profiles = cfg.get("gpu_profiles", {})
     whisper_cfg = cfg.get("whisper", {})
@@ -275,7 +284,11 @@ def build_registry_from_config(event_bus: EventBus | None = None) -> PluginRegis
                     worker_module=f"chatterbox_manga_studio.dubbing.workers.worker_{model_id}",
                     install_script=f"scripts/install_model_{model_id}.sh",
                     recommended_instances=_recommended_instances(estimated_vram, profiles),
-                    metadata={"source": "config.yaml", "port": model.get("port"), "venv": model.get("venv")},
+                    metadata={
+                        "source": "config.yaml",
+                        "port": model.get("port"),
+                        "venv": model.get("venv"),
+                    },
                 )
             )
             await registry.register(plugin)
@@ -322,7 +335,9 @@ def build_registry_from_config(event_bus: EventBus | None = None) -> PluginRegis
                     label=str(model.get("label", model_id)),
                     license_flag=str(model.get("license_flag", "unknown")),
                     estimated_vram=estimated_vram,
-                    supported_languages=list(model.get("default_for") or []) or target_languages or ["*"],
+                    supported_languages=list(model.get("default_for") or [])
+                    or target_languages
+                    or ["*"],
                     supports_voice_clone=bool(model.get("supports_clone", True)),
                     supports_reference_text=bool(model.get("needs_ref_transcript", False)),
                     supports_emotions=bool(model.get("inline_emotion_tags", False)),
@@ -331,7 +346,11 @@ def build_registry_from_config(event_bus: EventBus | None = None) -> PluginRegis
                     worker_module=f"chatterbox_manga_studio.dubbing.workers.worker_{model_id}",
                     install_script=f"scripts/install_model_{model_id}.sh",
                     recommended_instances=_recommended_instances(estimated_vram, profiles),
-                    metadata={"source": "config.yaml", "port": model.get("port"), "venv": model.get("venv")},
+                    metadata={
+                        "source": "config.yaml",
+                        "port": model.get("port"),
+                        "venv": model.get("venv"),
+                    },
                 )
             )
         registry._models["whisper"] = ExistingWorkerPlugin(

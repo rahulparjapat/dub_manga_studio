@@ -1,32 +1,30 @@
 """Redis storage backend implementation."""
+
 from __future__ import annotations
+
 import hashlib
 import json
 import time
 from datetime import datetime
-from typing import Any, BinaryIO
 from io import BytesIO
+from typing import Any, BinaryIO
 
-import redis.asyncio as redis
 from redis.asyncio import Redis
 
 from ..storage_manager import (
-    ObjectStorageInterface,
-    KeyValueStorageInterface,
-    QueueStorageInterface,
-    FileLockInterface,
-    StorageBackend,
-    StorageMetadata,
-    StorageError,
     NotFoundError,
-    ConflictError,
+    StorageBackend,
+    StorageError,
+    StorageMetadata,
 )
 
 
 class RedisObjectStore:
     """Redis-based object storage (metadata in Redis, blobs in Redis or external)."""
 
-    def __init__(self, client: Redis, use_redis_blobs: bool = True, max_blob_size: int = 10 * 1024 * 1024):
+    def __init__(
+        self, client: Redis, use_redis_blobs: bool = True, max_blob_size: int = 10 * 1024 * 1024
+    ):
         self.client = client
         self.use_redis_blobs = use_redis_blobs
         self.max_blob_size = max_blob_size
@@ -35,6 +33,7 @@ class RedisObjectStore:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.REDIS
 
     async def initialize(self) -> None:
@@ -85,7 +84,6 @@ class RedisObjectStore:
 
         etag = self._compute_etag(blob)
         content_type = content_type or "application/octet-stream"
-        meta_dict = metadata or {}
 
         pipe = self.client.pipeline()
         # Store blob
@@ -177,13 +175,17 @@ class RedisObjectStore:
                 meta = await self.client.hgetall(k)
                 if meta:
                     key = k.decode().replace(self._meta_key(""), "")
-                    results.append(StorageMetadata(
-                        key=key,
-                        size_bytes=int(meta[b"size_bytes"]),
-                        content_type=meta.get(b"content_type", b"application/octet-stream").decode(),
-                        etag=meta.get(b"etag", b"").decode(),
-                        metadata=json.loads(meta.get(b"metadata", b"{}")),
-                    ))
+                    results.append(
+                        StorageMetadata(
+                            key=key,
+                            size_bytes=int(meta[b"size_bytes"]),
+                            content_type=meta.get(
+                                b"content_type", b"application/octet-stream"
+                            ).decode(),
+                            etag=meta.get(b"etag", b"").decode(),
+                            metadata=json.loads(meta.get(b"metadata", b"{}")),
+                        )
+                    )
 
             if cursor == 0:
                 break
@@ -224,6 +226,7 @@ class RedisKVStore:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.REDIS
 
     async def initialize(self) -> None:
@@ -242,7 +245,7 @@ class RedisKVStore:
         return f"{self.key_prefix}{key}"
 
     async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
-        data = json.dumps(value)
+        json.dumps(value)
         if ttl:
             await self.client.setex(self._key(key), ttl, json.dumps(value))
         else:
@@ -271,11 +274,12 @@ class RedisKVStore:
         return await self.client.decrby(self._key(key), amount)
 
     async def keys(self, pattern: str) -> list[str]:
-        full_pattern = f"{self.key_prefix}{pattern}"
         keys = []
         cursor = 0
         while True:
-            cursor, keys = await self.client.scan(cursor=cursor, match=f"{self.key_prefix}{pattern}", count=100)
+            cursor, keys = await self.client.scan(
+                cursor=cursor, match=f"{self.key_prefix}{pattern}", count=100
+            )
             keys = [k.decode().replace(self.key_prefix, "") for k in keys]
             if not keys:
                 break
@@ -299,6 +303,7 @@ class RedisQueue:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.REDIS
 
     async def initialize(self) -> None:
@@ -318,16 +323,20 @@ class RedisQueue:
 
     async def enqueue(self, queue: str, payload: dict, priority: int = 0) -> str:
         import uuid
+
         job_id = str(uuid.uuid4())
         payload_json = json.dumps({"id": job_id, "payload": payload, "created": time.time()})
         # Use negative priority for max-heap behavior (higher priority = lower score)
         await self.client.zadd(self._queue_key(queue), {payload_json: -priority})
         # Store payload separately
-        await self.client.hset(f"{self.key_prefix}payload:{job_id}", mapping={
-            "data": json.dumps(payload),
-            "queue": queue,
-            "priority": str(priority),
-        })
+        await self.client.hset(
+            f"{self.key_prefix}payload:{job_id}",
+            mapping={
+                "data": json.dumps(payload),
+                "queue": queue,
+                "priority": str(priority),
+            },
+        )
         return job_id
 
     async def dequeue(self, queue: str, count: int = 1) -> list[tuple[str, dict]]:
@@ -351,7 +360,7 @@ class RedisQueue:
     async def peek(self, queue: str, count: int = 10) -> list[tuple[str, dict]]:
         results = await self.client.zrange(self._queue_key(queue), 0, count - 1, withscores=True)
         results_list = []
-        for job_id, score in results:
+        for job_id, _score in results:
             job_id = job_id.decode() if isinstance(job_id, bytes) else job_id
             payload_data = await self.client.hgetall(f"{self.key_prefix}payload:{job_id}")
             if payload_data:
@@ -372,15 +381,6 @@ class RedisQueue:
         payload = json.loads(payload_data[b"data"])
         return await self.enqueue(queue_name, payload, priority) == job_id
 
-    async def health_check(self) -> bool:
-        try:
-            return await self.client.ping()
-        except Exception:
-            return False
-
-    async def close(self) -> None:
-        pass
-
 
 class RedisLock:
     """Redis-based distributed lock using SET NX EX."""
@@ -392,6 +392,7 @@ class RedisLock:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.REDIS
 
     async def initialize(self) -> None:
@@ -409,19 +410,17 @@ class RedisLock:
     def _lock_key(self, key: str) -> str:
         return f"{self.key_prefix}{key}"
 
-    async def acquire(self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10) -> bool:
+    async def acquire(
+        self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10
+    ) -> bool:
         import asyncio
+
         lock_key = self._lock_key(key)
         start = time.time()
 
         while True:
             # SET NX EX for atomic lock acquisition
-            acquired = await self.client.set(
-                lock_key,
-                str(time.time() + ttl),
-                nx=True,
-                ex=ttl
-            )
+            acquired = await self.client.set(lock_key, str(time.time() + ttl), nx=True, ex=ttl)
             if acquired:
                 return True
 
@@ -431,22 +430,13 @@ class RedisLock:
             await asyncio.sleep(0.1)
 
     async def release(self, key: str) -> bool:
-        lock_key = self._lock_key(key)
+        self._lock_key(key)
         # Only delete if we own the lock (simple version - in production use Lua script)
         result = await self.client.delete(self._lock_key(key))
         return result > 0
 
     async def is_locked(self, key: str) -> bool:
         return await self.client.exists(self._lock_key(key)) > 0
-
-    async def health_check(self) -> bool:
-        try:
-            return await self.client.ping()
-        except Exception:
-            return False
-
-    async def close(self) -> None:
-        pass
 
 
 def create_redis_stores(

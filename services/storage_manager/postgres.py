@@ -1,24 +1,18 @@
 """PostgreSQL storage backend implementation."""
-from __future__ import annotations
-import json
-import hashlib
-from datetime import datetime
-from typing import Any, BinaryIO
-from uuid import UUID
 
-import asyncpg
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timedelta
+from typing import Any
+
 from asyncpg import Pool
 
 from ..storage_manager import (
-    ObjectStorageInterface,
-    KeyValueStorageInterface,
-    QueueStorageInterface,
-    FileLockInterface,
+    NotFoundError,
     StorageBackend,
     StorageMetadata,
-    StorageError,
-    NotFoundError,
-    ConflictError,
 )
 
 
@@ -81,13 +75,13 @@ class PostgresObjectStore:
                 chunks.append(chunk)
             blob = b"".join(chunks)
 
-        size = len(blob)
+        len(blob)
         etag = self._compute_etag(blob)
         content_type = content_type or "application/octet-stream"
-        meta_dict = metadata or {}
 
         async with self.pool.acquire() as conn:
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO objects (key, data, content_type, size_bytes, etag, metadata, modified_at)
                 VALUES ($1, $2, $3, $4, $5, $6, NOW())
                 ON CONFLICT (key) DO UPDATE SET
@@ -97,7 +91,14 @@ class PostgresObjectStore:
                     etag = EXCLUDED.etag,
                     metadata = EXCLUDED.metadata,
                     modified_at = NOW()
-            """, key, blob, content_type, len(blob), self._compute_etag(blob), metadata or {})
+            """,
+                key,
+                blob,
+                content_type,
+                len(blob),
+                self._compute_etag(blob),
+                metadata or {},
+            )
 
         return StorageMetadata(
             key=key,
@@ -112,7 +113,7 @@ class PostgresObjectStore:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data, content_type, size_bytes, etag, metadata, created_at, modified_at FROM objects WHERE key = $1",
-                key
+                key,
             )
             if not row:
                 raise NotFoundError(key, StorageBackend.POSTGRESQL)
@@ -129,6 +130,7 @@ class PostgresObjectStore:
     async def get_stream(self, key: str) -> tuple[bytes, StorageMetadata]:
         # For PostgreSQL, we return bytes (could wrap in BytesIO for stream interface)
         from io import BytesIO
+
         data, meta = await self.get(key)
         return BytesIO(data), meta
 
@@ -145,7 +147,7 @@ class PostgresObjectStore:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT size_bytes, content_type, etag, metadata, created_at, modified_at FROM objects WHERE key = $1",
-                key
+                key,
             )
             if not row:
                 raise NotFoundError(key, StorageBackend.POSTGRESQL)
@@ -169,24 +171,31 @@ class PostgresObjectStore:
         offset = int(continuation_token) if continuation_token else 0
 
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT key, size_bytes, content_type, etag, metadata, created_at, modified_at
                 FROM objects
                 WHERE key LIKE $1
                 ORDER BY key
                 LIMIT $2 OFFSET $3
-            """, f"{prefix}%", max_keys, offset)
+            """,
+                f"{prefix}%",
+                max_keys,
+                offset,
+            )
 
             results = []
             for row in rows:
-                results.append(StorageMetadata(
-                    key=row["key"],
-                    size_bytes=row["size_bytes"],
-                    content_type=row["content_type"],
-                    etag=row["etag"],
-                    metadata=row["metadata"] or {},
-                    backend=StorageBackend.POSTGRESQL,
-                ))
+                results.append(
+                    StorageMetadata(
+                        key=row["key"],
+                        size_bytes=row["size_bytes"],
+                        content_type=row["content_type"],
+                        etag=row["etag"],
+                        metadata=row["metadata"] or {},
+                        backend=StorageBackend.POSTGRESQL,
+                    )
+                )
 
             next_token = str(offset + len(results)) if len(results) == max_keys else None
             return results, next_token
@@ -197,7 +206,8 @@ class PostgresObjectStore:
             if not row:
                 raise NotFoundError(src_key, StorageBackend.POSTGRESQL)
 
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO objects (key, data, content_type, size_bytes, etag, metadata)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (key) DO UPDATE SET
@@ -207,7 +217,14 @@ class PostgresObjectStore:
                     etag = EXCLUDED.etag,
                     metadata = EXCLUDED.metadata,
                     modified_at = NOW()
-            """, dst_key, row["data"], row["content_type"], row["size_bytes"], row["etag"], row["metadata"])
+            """,
+                dst_key,
+                row["data"],
+                row["content_type"],
+                row["size_bytes"],
+                row["etag"],
+                row["metadata"],
+            )
 
             return await self.head(dst_key)
 
@@ -230,6 +247,7 @@ class PostgresKVStore:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.POSTGRESQL
 
     async def initialize(self) -> None:
@@ -257,24 +275,26 @@ class PostgresKVStore:
         pass
 
     async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
-        import json
         async with self.pool.acquire() as conn:
             expires_at = datetime.utcnow() + timedelta(seconds=ttl) if ttl else None
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO kv_store (key, value, ttl, expires_at)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (key) DO UPDATE SET
                     value = EXCLUDED.value,
                     ttl = EXCLUDED.ttl,
                     expires_at = EXCLUDED.expires_at
-            """, key, json.dumps(value), ttl, expires_at)
+            """,
+                key,
+                json.dumps(value),
+                ttl,
+                expires_at,
+            )
 
     async def get(self, key: str, default: Any = None) -> Any:
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT value, expires_at FROM kv_store WHERE key = $1",
-                key
-            )
+            row = await conn.fetchrow("SELECT value, expires_at FROM kv_store WHERE key = $1", key)
             if not row:
                 return default
             if row["expires_at"] and row["expires_at"] < datetime.utcnow():
@@ -293,10 +313,7 @@ class PostgresKVStore:
 
     async def incr(self, key: str, amount: int = 1) -> int:
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT value FROM kv_store WHERE key = $1",
-                key
-            )
+            row = await conn.fetchrow("SELECT value FROM kv_store WHERE key = $1", key)
             current = row["value"] if row else 0
             new_val = int(current) + amount
             await self.set(key, new_val)
@@ -310,17 +327,13 @@ class PostgresKVStore:
         like_pattern = pattern.replace("*", "%").replace("?", "_")
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT key FROM kv_store WHERE key LIKE $1 LIMIT 1000",
-                like_pattern
+                "SELECT key FROM kv_store WHERE key LIKE $1 LIMIT 1000", like_pattern
             )
             return [r["key"] for r in rows]
 
     async def ttl(self, key: str) -> int | None:
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT expires_at FROM kv_store WHERE key = $1",
-                key
-            )
+            row = await conn.fetchrow("SELECT expires_at FROM kv_store WHERE key = $1", key)
             if not row or not row["expires_at"]:
                 return None
             remaining = (row["expires_at"] - datetime.utcnow()).total_seconds()
@@ -331,7 +344,7 @@ class PostgresKVStore:
             result = await conn.execute(
                 "UPDATE kv_store SET expires_at = $1 WHERE key = $2",
                 datetime.utcnow() + timedelta(seconds=ttl),
-                key
+                key,
             )
             return result == "UPDATE 1"
 
@@ -345,6 +358,7 @@ class PostgresQueue:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.POSTGRESQL
 
     async def initialize(self) -> None:
@@ -379,74 +393,84 @@ class PostgresQueue:
 
     async def enqueue(self, queue: str, payload: dict, priority: int = 0) -> str:
         import uuid
+
         job_id = str(uuid.uuid4())
         async with self.pool.acquire() as conn:
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO job_queue (id, queue_name, payload, priority)
                 VALUES ($1, $2, $3, $4)
-            """, job_id, queue, payload, priority)
+            """,
+                job_id,
+                queue,
+                payload,
+                priority,
+            )
         return job_id
 
     async def dequeue(self, queue: str, count: int = 1) -> list[tuple[str, dict]]:
         results = []
         async with self.pool.acquire() as conn:
             # Use FOR UPDATE SKIP LOCKED for concurrent dequeuing
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT id, payload FROM job_queue
                 WHERE queue_name = $1 AND status = 'pending'
                 ORDER BY priority DESC, created_at
                 LIMIT $2
                 FOR UPDATE SKIP LOCKED
-            """, queue, count)
+            """,
+                queue,
+                count,
+            )
 
             for row in rows:
-                job_id = row["id"]
-                payload = row["payload"]
+                row["id"]
+                row["payload"]
                 # Mark as running
-                await conn.execute("""
+                await conn.execute(
+                    """
                     UPDATE job_queue SET status = 'running', started_at = NOW()
                     WHERE id = $1
-                """, row["id"])
+                """,
+                    row["id"],
+                )
                 results.append((row["id"], row["payload"]))
 
         return results
 
     async def peek(self, queue: str, count: int = 10) -> list[tuple[str, dict]]:
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT id, payload FROM job_queue
                 WHERE queue_name = $1 AND status = 'pending'
                 ORDER BY priority DESC, created_at
                 LIMIT $2
-            """, queue, count)
+            """,
+                queue,
+                count,
+            )
             return [(r["id"], r["payload"]) for r in rows]
 
     async def size(self, queue: str) -> int:
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
-                "SELECT COUNT(*) FROM job_queue WHERE queue_name = $1 AND status = 'pending'",
-                queue
+                "SELECT COUNT(*) FROM job_queue WHERE queue_name = $1 AND status = 'pending'", queue
             )
 
     async def requeue(self, queue: str, job_id: str) -> bool:
         async with self.pool.acquire() as conn:
-            result = await conn.execute("""
+            result = await conn.execute(
+                """
                 UPDATE job_queue
                 SET status = 'pending', started_at = NULL
                 WHERE id = $1 AND queue_name = $2
-            """, job_id, queue)
+            """,
+                job_id,
+                queue,
+            )
             return result == "UPDATE 1"
-
-    async def health_check(self) -> bool:
-        try:
-            async with self.pool.acquire() as conn:
-                await conn.fetchval("SELECT 1")
-            return True
-        except Exception:
-            return False
-
-    async def close(self) -> None:
-        pass
 
 
 class PostgresLock:
@@ -458,6 +482,7 @@ class PostgresLock:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.POSTGRESQL
 
     async def initialize(self) -> None:
@@ -477,13 +502,18 @@ class PostgresLock:
     def _lock_key(self, key: str) -> tuple[int, int]:
         """Convert string key to 2 int64 for pg_advisory_lock."""
         h = hashlib.sha256(key.encode()).digest()
-        return (int.from_bytes(h[:8], "big", signed=True),
-                int.from_bytes(h[8:16], "big", signed=True))
+        return (
+            int.from_bytes(h[:8], "big", signed=True),
+            int.from_bytes(h[8:16], "big", signed=True),
+        )
 
-    async def acquire(self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10) -> bool:
+    async def acquire(
+        self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10
+    ) -> bool:
         import asyncio
         import time
-        start = time.time()
+
+        time.time()
         lock_key = self._lock_key(key)
 
         while True:
@@ -493,33 +523,27 @@ class PostgresLock:
                     try:
                         await asyncio.wait_for(
                             conn.fetchval("SELECT pg_advisory_lock($1, $2)", *lock_key),
-                            timeout=blocking_timeout
+                            timeout=blocking_timeout,
                         )
                         return True
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         return False
                 else:
                     # Non-blocking try
-                    result = await conn.fetchval(
-                        "SELECT pg_try_advisory_lock($1, $2)", *lock_key
-                    )
+                    result = await conn.fetchval("SELECT pg_try_advisory_lock($1, $2)", *lock_key)
                     return bool(result)
 
     async def release(self, key: str) -> bool:
         lock_key = self._lock_key(key)
         async with self.pool.acquire() as conn:
-            result = await conn.fetchval(
-                "SELECT pg_advisory_unlock($1, $2)", *lock_key
-            )
+            result = await conn.fetchval("SELECT pg_advisory_unlock($1, $2)", *lock_key)
             return bool(result)
 
     async def is_locked(self, key: str) -> bool:
         lock_key = self._lock_key(key)
         async with self.pool.acquire() as conn:
             # Check if we can acquire it (non-blocking)
-            result = await conn.fetchval(
-                "SELECT pg_try_advisory_lock($1, $2)", *lock_key
-            )
+            result = await conn.fetchval("SELECT pg_try_advisory_lock($1, $2)", *lock_key)
             if result:
                 # We got it, so it wasn't locked - release immediately
                 await conn.fetchval("SELECT pg_advisory_unlock($1, $2)", *lock_key)

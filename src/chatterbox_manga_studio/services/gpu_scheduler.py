@@ -1,4 +1,5 @@
 """GPU allocation, VRAM tracking, model residency, and eviction."""
+
 from __future__ import annotations
 
 import asyncio
@@ -47,7 +48,11 @@ class GPUDevice(BaseModel):
 
     @property
     def used_vram_gb(self) -> float:
-        return sum(allocation.vram_gb for allocation in self.allocations.values() if allocation.status in {AllocationStatus.RESERVED, AllocationStatus.RESIDENT})
+        return sum(
+            allocation.vram_gb
+            for allocation in self.allocations.values()
+            if allocation.status in {AllocationStatus.RESERVED, AllocationStatus.RESIDENT}
+        )
 
     @property
     def available_vram_gb(self) -> float:
@@ -69,7 +74,9 @@ class GPUScheduler:
         self._lock = asyncio.Lock()
 
     @classmethod
-    def from_config(cls, config: dict[str, Any], *, active_only: bool = True, event_bus: EventBus | None = None) -> "GPUScheduler":
+    def from_config(
+        cls, config: dict[str, Any], *, active_only: bool = True, event_bus: EventBus | None = None
+    ) -> GPUScheduler:
         profiles = config.get("gpu_profiles", {})
         active = config.get("active_gpu", "auto")
         devices: list[GPUDevice] = []
@@ -89,7 +96,13 @@ class GPUScheduler:
         if not devices and profiles:
             gpu_id, profile = next(iter(profiles.items()))
             data = profile if isinstance(profile, dict) else dict(profile)
-            devices.append(GPUDevice(gpu_id=gpu_id, label=str(data.get("label", gpu_id)), total_vram_gb=float(data.get("vram_gb", 0) or 0)))
+            devices.append(
+                GPUDevice(
+                    gpu_id=gpu_id,
+                    label=str(data.get("label", gpu_id)),
+                    total_vram_gb=float(data.get("vram_gb", 0) or 0),
+                )
+            )
         return cls(devices, event_bus=event_bus)
 
     async def allocate(
@@ -110,7 +123,9 @@ class GPUScheduler:
                 await self._evict_until_available_locked(required, preferred_gpu_id)
                 candidates = self._candidate_devices(required, preferred_gpu_id)
             if not candidates:
-                raise RuntimeError(f"Insufficient VRAM for {capabilities.model_id}: required={required}GB")
+                raise RuntimeError(
+                    f"Insufficient VRAM for {capabilities.model_id}: required={required}GB"
+                )
             device = sorted(candidates, key=lambda item: (-item.available_vram_gb, item.gpu_id))[0]
             allocation = GPUAllocation(
                 model_id=capabilities.model_id,
@@ -154,17 +169,38 @@ class GPUScheduler:
 
     async def snapshot(self) -> dict[str, Any]:
         async with self._lock:
-            return {gpu_id: device.model_dump(mode="json") | {"used_vram_gb": device.used_vram_gb, "available_vram_gb": device.available_vram_gb} for gpu_id, device in self.devices.items()}
+            return {
+                gpu_id: device.model_dump(mode="json")
+                | {
+                    "used_vram_gb": device.used_vram_gb,
+                    "available_vram_gb": device.available_vram_gb,
+                }
+                for gpu_id, device in self.devices.items()
+            }
 
     def _candidate_devices(self, required: float, preferred_gpu_id: str | None) -> list[GPUDevice]:
-        devices = [self.devices[preferred_gpu_id]] if preferred_gpu_id and preferred_gpu_id in self.devices else list(self.devices.values())
+        devices = (
+            [self.devices[preferred_gpu_id]]
+            if preferred_gpu_id and preferred_gpu_id in self.devices
+            else list(self.devices.values())
+        )
         return [device for device in devices if device.available_vram_gb >= required]
 
-    async def _evict_until_available_locked(self, required: float, preferred_gpu_id: str | None) -> None:
-        devices = [self.devices[preferred_gpu_id]] if preferred_gpu_id and preferred_gpu_id in self.devices else list(self.devices.values())
+    async def _evict_until_available_locked(
+        self, required: float, preferred_gpu_id: str | None
+    ) -> None:
+        devices = (
+            [self.devices[preferred_gpu_id]]
+            if preferred_gpu_id and preferred_gpu_id in self.devices
+            else list(self.devices.values())
+        )
         for device in devices:
             while device.available_vram_gb < required:
-                resident = [allocation for allocation in device.allocations.values() if allocation.status == AllocationStatus.RESIDENT]
+                resident = [
+                    allocation
+                    for allocation in device.allocations.values()
+                    if allocation.status == AllocationStatus.RESIDENT
+                ]
                 if not resident:
                     break
                 victim = sorted(resident, key=lambda allocation: allocation.last_used_at)[0]

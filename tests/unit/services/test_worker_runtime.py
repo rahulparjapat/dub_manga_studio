@@ -48,7 +48,10 @@ async def test_worker_runtime_load_infer_unload_and_progress():
     runtime = WorkerRuntime(adapter)
     progress = []
 
-    result = await runtime.infer(RuntimeInferenceRequest(model_id="m", payload={"text": "hi"}), progress=lambda rid, p, msg: progress.append((p, msg)))
+    result = await runtime.infer(
+        RuntimeInferenceRequest(model_id="m", payload={"text": "hi"}),
+        progress=lambda rid, p, msg: progress.append((p, msg)),
+    )
 
     assert result.ok is True
     assert result.result == {"text": "hi"}
@@ -62,7 +65,9 @@ async def test_worker_runtime_load_infer_unload_and_progress():
 async def test_worker_runtime_timeout_cancels_adapter():
     adapter = FakeAdapter(delay=0.1)
     runtime = WorkerRuntime(adapter)
-    req = RuntimeInferenceRequest(model_id="m", payload={}, timeout_seconds=0.01, request_id="r-timeout")
+    req = RuntimeInferenceRequest(
+        model_id="m", payload={}, timeout_seconds=0.01, request_id="r-timeout"
+    )
 
     result = await runtime.infer(req)
 
@@ -74,5 +79,7 @@ async def test_worker_runtime_timeout_cancels_adapter():
 @pytest.mark.asyncio
 async def test_worker_runtime_batch_runs_all_requests():
     runtime = WorkerRuntime(FakeAdapter(), max_concurrency=2)
-    results = await runtime.infer_batch([RuntimeInferenceRequest(model_id="m", payload={"text": str(i)}) for i in range(3)])
+    results = await runtime.infer_batch(
+        [RuntimeInferenceRequest(model_id="m", payload={"text": str(i)}) for i in range(3)]
+    )
     assert [result.result["text"] for result in results] == ["0", "1", "2"]

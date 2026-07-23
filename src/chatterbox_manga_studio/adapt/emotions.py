@@ -12,34 +12,53 @@ cues the SELECTED model can actually use:
 Curated manga palette (default) + AI-free mode (AI picks from the model's range).
 The AI inserts emotions automatically per cue based on story context.
 """
+
 from __future__ import annotations
+
+import re as _re
 
 # Which models can take emotion FROM TEXT, and in what native syntax.
 EMOTION_CAPABLE = {
-    "fish": "inline_tags",       # [excited]  (mid-text, square brackets)
-    "voxcpm2": "prefix_paren",   # (energetic, fast) at line start
+    "fish": "inline_tags",  # [excited]  (mid-text, square brackets)
+    "voxcpm2": "prefix_paren",  # (energetic, fast) at line start
     # chatterbox / indicf5 / vibevoice: not text-emotion capable -> feature greys out
 }
 
 # Curated manga-explainer palette -> native rendering per capable model.
 # key = internal emotion id; fish = bracket tag; voxcpm2 = parenthetical phrase.
 MANGA_PALETTE = {
-    "hype":     {"label": "Hype / Excited",     "fish": "[excited]",
-                 "voxcpm2": "(high-energy, fast, excited tone)"},
-    "tense":    {"label": "Tense / Serious",    "fish": "[tense]",
-                 "voxcpm2": "(serious, tense, low tone)"},
-    "whisper":  {"label": "Whisper / Secret",   "fish": "[whispering]",
-                 "voxcpm2": "(soft whisper, secretive)"},
-    "sad":      {"label": "Sad / Emotional",    "fish": "[sad]",
-                 "voxcpm2": "(sad, emotional, slow)"},
-    "comedic":  {"label": "Comedic",            "fish": "[playful]",
-                 "voxcpm2": "(playful, light, comedic)"},
-    "calm":     {"label": "Calm Narration",     "fish": "[calm narration]",
-                 "voxcpm2": "(calm, clear narrator)"},
-    "shocked":  {"label": "Shocked / Surprise", "fish": "[shocked]",
-                 "voxcpm2": "(shocked, surprised, sudden)"},
-    "epic":     {"label": "Epic / Hero moment", "fish": "[epic, powerful]",
-                 "voxcpm2": "(epic, powerful, cinematic)"},
+    "hype": {
+        "label": "Hype / Excited",
+        "fish": "[excited]",
+        "voxcpm2": "(high-energy, fast, excited tone)",
+    },
+    "tense": {
+        "label": "Tense / Serious",
+        "fish": "[tense]",
+        "voxcpm2": "(serious, tense, low tone)",
+    },
+    "whisper": {
+        "label": "Whisper / Secret",
+        "fish": "[whispering]",
+        "voxcpm2": "(soft whisper, secretive)",
+    },
+    "sad": {"label": "Sad / Emotional", "fish": "[sad]", "voxcpm2": "(sad, emotional, slow)"},
+    "comedic": {"label": "Comedic", "fish": "[playful]", "voxcpm2": "(playful, light, comedic)"},
+    "calm": {
+        "label": "Calm Narration",
+        "fish": "[calm narration]",
+        "voxcpm2": "(calm, clear narrator)",
+    },
+    "shocked": {
+        "label": "Shocked / Surprise",
+        "fish": "[shocked]",
+        "voxcpm2": "(shocked, surprised, sudden)",
+    },
+    "epic": {
+        "label": "Epic / Hero moment",
+        "fish": "[epic, powerful]",
+        "voxcpm2": "(epic, powerful, cinematic)",
+    },
 }
 
 
@@ -57,13 +76,13 @@ def speed_hint(model_id: str, speed: float) -> str:
     user clearly wants faster/slower (outside a small neutral deadzone).
     """
     if abs(float(speed) - 1.0) < 0.06:
-        return ""                       # ~normal -> no hint
+        return ""  # ~normal -> no hint
     fast = float(speed) > 1.0
     if model_id == "voxcpm2":
         return "(fast paced, quick delivery)" if fast else "(slow, relaxed pace)"
     if model_id == "fish":
         return "[fast pace]" if fast else "[slow pace]"
-    return ""                           # other models: slider handles it
+    return ""  # other models: slider handles it
 
 
 def capability_note(model_id: str) -> str:
@@ -72,42 +91,55 @@ def capability_note(model_id: str) -> str:
     if model_id == "voxcpm2":
         return "VoxCPM2 reads a (style) prefix — emotions supported ✅"
     if model_id == "chatterbox":
-        return ("Chatterbox has no text emotion (uses numeric dials) — "
-                "emotion tagging disabled for this model.")
+        return (
+            "Chatterbox has no text emotion (uses numeric dials) — "
+            "emotion tagging disabled for this model."
+        )
     if model_id == "indicf5":
-        return ("IndicF5 emotion comes from the reference voice, not text — "
-                "emotion tagging disabled for this model.")
+        return (
+            "IndicF5 emotion comes from the reference voice, not text — "
+            "emotion tagging disabled for this model."
+        )
     if model_id == "vibevoice":
         return "VibeVoice has limited text emotion — emotion tagging disabled."
     if model_id == "qwen3tts":
-        return ("Qwen3-TTS uses a natural-language style instruction (e.g. 'Very happy.') "
-                "set in the emotion/instruct box — not inline tags in the narration.")
+        return (
+            "Qwen3-TTS uses a natural-language style instruction (e.g. 'Very happy.') "
+            "set in the emotion/instruct box — not inline tags in the narration."
+        )
     return "Emotion tagging not available for this model."
 
 
 def build_emotion_prompt(model_id: str, ai_free: bool) -> str:
     """Extra system-prompt block telling the AI HOW to add emotions for THIS model."""
     if not is_emotion_capable(model_id):
-        return ""   # feature disabled for this model
+        return ""  # feature disabled for this model
     syntax = EMOTION_CAPABLE[model_id]
     if syntax == "inline_tags":
-        fmt = ("Insert emotion as inline square-bracket tags placed immediately before "
-               "the phrase they affect, e.g. `[excited] Aur phir dhamaka hua!`. "
-               "Tags may appear mid-sentence. Do NOT explain the tags.")
+        fmt = (
+            "Insert emotion as inline square-bracket tags placed immediately before "
+            "the phrase they affect, e.g. `[excited] Aur phir dhamaka hua!`. "
+            "Tags may appear mid-sentence. Do NOT explain the tags."
+        )
     else:  # prefix_paren
-        fmt = ("Begin each line with ONE parenthetical style phrase, e.g. "
-               "`(high-energy, fast) Aur phir dhamaka hua!`. One phrase per line, "
-               "at the start only.")
+        fmt = (
+            "Begin each line with ONE parenthetical style phrase, e.g. "
+            "`(high-energy, fast) Aur phir dhamaka hua!`. One phrase per line, "
+            "at the start only."
+        )
     if ai_free:
-        choose = ("Choose the emotion that best fits each line's story context "
-                  "(hype, tension, whisper, sadness, comedy, calm, shock, epic, etc.).")
+        choose = (
+            "Choose the emotion that best fits each line's story context "
+            "(hype, tension, whisper, sadness, comedy, calm, shock, epic, etc.)."
+        )
     else:
         opts = ", ".join(f"{v['label']}" for v in MANGA_PALETTE.values())
-        choose = (f"Use ONLY this manga emotion palette, picking the best fit per line: "
-                  f"{opts}.")
-    return (f"\nEMOTION LAYER (for {model_id}): Automatically add emotions to EACH line "
-            f"based on the manga story context. {choose} {fmt} "
-            f"Keep the narration text itself natural; emotions must match the scene.")
+        choose = f"Use ONLY this manga emotion palette, picking the best fit per line: " f"{opts}."
+    return (
+        f"\nEMOTION LAYER (for {model_id}): Automatically add emotions to EACH line "
+        f"based on the manga story context. {choose} {fmt} "
+        f"Keep the narration text itself natural; emotions must match the scene."
+    )
 
 
 def palette_reference(model_id: str) -> str:
@@ -118,8 +150,6 @@ def palette_reference(model_id: str) -> str:
     lines = [f"- {v['label']}: `{v[key]}`" for v in MANGA_PALETTE.values()]
     return "Manga emotion palette for this model:\n" + "\n".join(lines)
 
-
-import re as _re
 
 # Matches a leading VoxCPM2-style "(style phrase)" or a Fish "[tag]" at line start,
 # plus inline [tags]. Used to STRIP emotion markup before sending to a model that

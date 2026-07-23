@@ -12,35 +12,53 @@ Flow (all automatic):
 
 Yields human-readable progress strings; final dict has the output paths.
 """
+
 from __future__ import annotations
+
 import json
 from pathlib import Path
 
-from ..common.paths import project_dir, edition_dir
 from ..common.config import load_config, model_cfg
-from ..common.diskmanager import fits_budget, disk_free_gb
+from ..common.diskmanager import disk_free_gb, fits_budget
 from ..common.logging_util import get_logger
-from .router import get_router
-from .workers.protocol import GenRequest, TARGET_LANG
+from ..common.paths import edition_dir, project_dir
+from ..export import exporter as EX
+from ..export import srt as SRT
+from ..export import timeline as TL
 from . import cleanup
 from .live_render import LivePipeline
-from ..export import timeline as TL, exporter as EX, srt as SRT
+from .router import get_router
+from .workers.protocol import TARGET_LANG, GenRequest
 
 log = get_logger("auto")
 
 
-def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
-             energy: str = "expressive",
-             reference_wav: str | None = None, reference_text: str | None = None,
-             emotion_tags: str | None = None,
-             timing_mode: str = "Cue-Locked Audio Master Sync",
-             use_live: bool = True, clear_cache_after: bool = True,
-             captions: bool = False, mask: bool = False, mask_opts: dict | None = None,
-             bgm_path: str | None = None, instances: int = 1,
-             force_regenerate: bool = False, narrator_speed: float = 1.0,
-             intro_added: bool = False, outro_added: bool = False,
-             cancel_event=None, progress=None):
+def run_auto(
+    project_id: str,
+    target: str,
+    model_id: str,
+    lines: list[str],
+    energy: str = "expressive",
+    reference_wav: str | None = None,
+    reference_text: str | None = None,
+    emotion_tags: str | None = None,
+    timing_mode: str = "Cue-Locked Audio Master Sync",
+    use_live: bool = True,
+    clear_cache_after: bool = True,
+    captions: bool = False,
+    mask: bool = False,
+    mask_opts: dict | None = None,
+    bgm_path: str | None = None,
+    instances: int = 1,
+    force_regenerate: bool = False,
+    narrator_speed: float = 1.0,
+    intro_added: bool = False,
+    outro_added: bool = False,
+    cancel_event=None,
+    progress=None,
+):
     """Run the whole pipeline. `progress(msg)` is called with status strings."""
+
     def say(m):
         log.info(m)
         if progress:
@@ -51,10 +69,11 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     if not okd:
         return {"ok": False, "message": f"Disk: {dmsg}"}
 
-    import soundfile as sf
     import numpy as np
+    import soundfile as sf
 
     from ..common.paths import find_source_video
+
     trj = project_dir(pid) / "transcript" / "transcript.json"
     src_v = find_source_video(pid)
     if not trj.exists() or not src_v:
@@ -70,15 +89,19 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     # #3 reference-voice quality check (warn, don't block)
     if reference_wav:
         from ..common.voicecheck import check_reference
+
         ok_ref, ref_msg = check_reference(reference_wav)
         say(ref_msg)
 
     # #1 long-cue warning (very long lines can overflow model context)
     from ..common.textutil import MAX_CHARS
+
     long_lines = [i for i, ln in enumerate(lines) if len(ln) > MAX_CHARS]
     if long_lines:
-        say(f"⚠ {len(long_lines)} very long line(s) (>{MAX_CHARS} chars) — may be slower/"
-            f"less stable. Consider shorter cues for best quality.")
+        say(
+            f"⚠ {len(long_lines)} very long line(s) (>{MAX_CHARS} chars) — may be slower/"
+            f"less stable. Consider shorter cues for best quality."
+        )
 
     # cue objects (source timing) + TTS requests
     cues = []
@@ -100,11 +123,18 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
         source_indices.append(source_i)
         cues.append(TL.Cue(idx=i, src_start=seg["start"], src_end=seg["end"], text=ln))
         raw = cue_dir / f"cue_{i:04d}_raw.wav"
-        reqs.append(GenRequest(
-            text=ln, out_path=str(raw), target=target,
-            language=TARGET_LANG.get(target, "en"),
-            reference_wav=reference_wav, reference_text=reference_text,
-            preset=preset, emotion_tags=emotion_tags).to_json())
+        reqs.append(
+            GenRequest(
+                text=ln,
+                out_path=str(raw),
+                target=target,
+                language=TARGET_LANG.get(target, "en"),
+                reference_wav=reference_wav,
+                reference_text=reference_text,
+                preset=preset,
+                emotion_tags=emotion_tags,
+            ).to_json()
+        )
 
     # ---- live render (parallel) ----
     pipe = None
@@ -112,7 +142,8 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     # them for a timeline that preserves gaps or follows source timing.
     if use_live and not mask and timing_mode == "Cue-Locked Audio Master Sync":
         pipe = LivePipeline(pid, target)
-        work = pipe.groups_dir / "work"; work.mkdir(parents=True, exist_ok=True)
+        work = pipe.groups_dir / "work"
+        work.mkdir(parents=True, exist_ok=True)
 
         def render_group(g, group_cues):
             for c in group_cues:
@@ -124,8 +155,7 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
             # Groups are later stream-copy-concatenated together, so keep every group
             # UNIFORMLY re-encoded (fast_copy=False) — avoids mismatched codecs across
             # groups that would break the outer cached concat.
-            lst = EX.build_segments_concat(src_video, sub_tl, work / f"g{g}",
-                                           fast_copy=False)
+            lst = EX.build_segments_concat(src_video, sub_tl, work / f"g{g}", fast_copy=False)
             out = pipe.groups_dir / f"group_{g:03d}.mp4"
             # GLITCH FIX: re-encode so each group has a clean, monotonic timeline
             # (copy-concat leaves inflated PTS -> the video freezes part-way).
@@ -137,8 +167,10 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
 
     # ---- stream TTS ----
     ok = {"n": 0}
-    say(f"Generating {len(lines)} cues with {model_cfg(model_id)['label']} "
-        f"({instances} instance(s))…")
+    say(
+        f"Generating {len(lines)} cues with {model_cfg(model_id)['label']} "
+        f"({instances} instance(s))…"
+    )
 
     # H3: post_process runs in the router's overlap thread — CPU cleanup overlaps GPU.
     def post_process(i, r):
@@ -163,17 +195,25 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     def on_cue(i, r):
         # crash-safe autosave: checkpoint dub progress as cues finish
         try:
-            SF.checkpoint(pid, "dub_progress",
-                          {"done": ok["n"], "total": len(lines), "model": model_id})
+            SF.checkpoint(
+                pid, "dub_progress", {"done": ok["n"], "total": len(lines), "model": model_id}
+            )
         except Exception:
             pass
         if progress and (i % 5 == 0 or i == len(lines) - 1):
             progress(f"TTS {ok['n']}/{len(lines)} cues done…")
 
     results = get_router().generate_stream(
-        model_id, reqs, instances=instances, on_cue=on_cue, post_process=post_process,
-        clear_cache_after=clear_cache_after, keep_venv=True,
-        force_regenerate=force_regenerate, cancel_event=cancel_event)
+        model_id,
+        reqs,
+        instances=instances,
+        on_cue=on_cue,
+        post_process=post_process,
+        clear_cache_after=clear_cache_after,
+        keep_venv=True,
+        force_regenerate=force_regenerate,
+        cancel_event=cancel_event,
+    )
     try:
         SF.clear_checkpoint(pid, "dub_progress")
     except Exception:
@@ -185,11 +225,17 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
         if pipe:
             pipe.cancel()
         done = sum(1 for r in results if r and r.get("ok"))
-        return {"ok": False, "cancelled": True,
-                "message": f"Cancelled — kept {done}/{len(reqs)} finished cues. "
-                           "Run again to resume."}
+        return {
+            "ok": False,
+            "cancelled": True,
+            "message": f"Cancelled — kept {done}/{len(reqs)} finished cues. "
+            "Run again to resume.",
+        }
     if ok["n"] == 0:
-        return {"ok": False, "message": f"Dub failed: {results[0].get('error','?') if results else 'no cues'}"}
+        return {
+            "ok": False,
+            "message": f"Dub failed: {results[0].get('error','?') if results else 'no cues'}",
+        }
 
     if pipe:
         pipe.mark_tts_done()
@@ -209,31 +255,39 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
             c.audio_seconds = info.frames / info.samplerate
         else:
             # placeholder silence keeps A/V alignment for every following cue
-            sf.write(str(clean),
-                     np.zeros(int(placeholder_secs * 48000), dtype="float32"),
-                     48000, subtype="PCM_16")
+            sf.write(
+                str(clean),
+                np.zeros(int(placeholder_secs * 48000), dtype="float32"),
+                48000,
+                subtype="PCM_16",
+            )
             c.audio_seconds = placeholder_secs
             failed_cues.append(c.idx + 1)  # 1-based for the user
     if failed_cues:
-        say(f"⚠ {len(failed_cues)} cue(s) failed TTS and were filled with short "
+        say(
+            f"⚠ {len(failed_cues)} cue(s) failed TTS and were filled with short "
             f"silence so nothing after them is lost: cues "
             f"{failed_cues[:20]}{' …' if len(failed_cues) > 20 else ''}. "
-            f"Re-run with Force-Regenerate to retry just those.")
+            f"Re-run with Force-Regenerate to retry just those."
+        )
     tline = TL.build_timeline(timing_mode, cues)
 
     # ---- audio master (M2: STREAM-write, never hold whole hour in RAM) ----
     say("Building audio master…")
     sr = 48000
     audio_master = outdir / "audio_master.wav"
-    with sf.SoundFile(str(audio_master), mode="w", samplerate=sr,
-                      channels=1, subtype="PCM_16") as wf:
+    with sf.SoundFile(
+        str(audio_master), mode="w", samplerate=sr, channels=1, subtype="PCM_16"
+    ) as wf:
         wrote = False
         for s in tline.segments:
             if s.kind == "gap":
-                wf.write(np.zeros(int(s.out_duration * sr), dtype="float32")); wrote = True
+                wf.write(np.zeros(int(s.out_duration * sr), dtype="float32"))
+                wrote = True
             else:
                 a, _ = sf.read(str(cue_dir / f"cue_{s.cue_idx:04d}.wav"))
-                wf.write(np.asarray(a, dtype="float32")); wrote = True
+                wf.write(np.asarray(a, dtype="float32"))
+                wrote = True
         if not wrote:
             wf.write(np.zeros(1, dtype="float32"))
 
@@ -244,11 +298,15 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     if pipe:
         groups = pipe.cached_groups()
         from .live_render import cache_matches_timeline
+
         if cache_matches_timeline(groups, tline, timing_mode):
             lst = outdir / "cached_concat.txt"
-            lst.write_text("\n".join(f"file '{groups[gk]['file']}'"
-                           for gk in sorted(groups, key=lambda k: int(k))),
-                           encoding="utf-8")
+            lst.write_text(
+                "\n".join(
+                    f"file '{groups[gk]['file']}'" for gk in sorted(groups, key=lambda k: int(k))
+                ),
+                encoding="utf-8",
+            )
             # Re-encode the final join of the group files into one uniform stream.
             EX.concat_video(lst, silent, reencode=True)
             used_cache = True
@@ -257,19 +315,24 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
         # Main (non-live) path. GLITCH FIX: re-encode the final join so the silent
         # video always has a clean, continuous timeline (copy-concat of retimed
         # segments leaves inflated PTS that freezes the video half-way through).
-        lst = EX.build_segments_concat(src_video, tline, outdir / "work",
-                                       fast_copy=False)
+        lst = EX.build_segments_concat(src_video, tline, outdir / "work", fast_copy=False)
         EX.concat_video(lst, silent, reencode=True)
 
     # ---- optional Chinese subtitle mask ----
     video_stage = silent
     if mask and mask_opts:
         from ..export.subtitle_mask import build_mask_filter
-        fc = build_mask_filter(mask_opts.get("type", "Blur + dark band"),
-                               mask_opts.get("x", 308), mask_opts.get("y", 946),
-                               mask_opts.get("w", 854), mask_opts.get("h", 90),
-                               mask_opts.get("strength", 10), mask_opts.get("opacity", 0.6),
-                               color=mask_opts.get("color", "black"))
+
+        fc = build_mask_filter(
+            mask_opts.get("type", "Blur + dark band"),
+            mask_opts.get("x", 308),
+            mask_opts.get("y", 946),
+            mask_opts.get("w", 854),
+            mask_opts.get("h", 90),
+            mask_opts.get("strength", 10),
+            mask_opts.get("opacity", 0.6),
+            color=mask_opts.get("color", "black"),
+        )
         masked = outdir / "video_masked.mp4"
         EX.apply_filtergraph(video_stage, fc, masked)
         video_stage = masked
@@ -280,13 +343,14 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     final = outdir / "final.mp4"
     if bgm_path and Path(bgm_path).exists():
         from ..export.bgm import bgm_mix_filter
+
         fc = bgm_mix_filter(duck=True)
         EX.mux_audio_with_bgm(video_stage, audio_master, Path(bgm_path), final, fc)
         say("Mixed BGM under narration (sidechain ducking).")
     else:
         from ..export.bgm import clean_dub_audio_filter
-        EX.mux_audio(video_stage, audio_master, final,
-                     audio_filter=clean_dub_audio_filter())
+
+        EX.mux_audio(video_stage, audio_master, final, audio_filter=clean_dub_audio_filter())
 
     # ---- optional captions (burn) ----
     srt_path = outdir / "final.srt"
@@ -304,19 +368,30 @@ def run_auto(project_id: str, target: str, model_id: str, lines: list[str],
     meas = EX.measure_loudness(str(final))
     verdict = EX.loudness_verdict(meas)
     say(verdict)
-    EX.write_quality_report(outdir / "quality.json", {
-        "cues": len(cues), "timing_mode": timing_mode,
-        "total_seconds": round(tline.total_seconds, 2),
-        "nvenc": EX.has_nvenc(), "live_render": bool(pipe),
-        "reused_cache": used_cache,
-        "failed_cues": failed_cues,
-        "failed_cue_count": len(failed_cues),
-        "loudness": meas, "loudness_verdict": verdict})
+    EX.write_quality_report(
+        outdir / "quality.json",
+        {
+            "cues": len(cues),
+            "timing_mode": timing_mode,
+            "total_seconds": round(tline.total_seconds, 2),
+            "nvenc": EX.has_nvenc(),
+            "live_render": bool(pipe),
+            "reused_cache": used_cache,
+            "failed_cues": failed_cues,
+            "failed_cue_count": len(failed_cues),
+            "loudness": meas,
+            "loudness_verdict": verdict,
+        },
+    )
 
     say(f"✅ DONE — {final.name} ({tline.total_seconds:.0f}s). Disk free {disk_free_gb():.1f} GB.")
-    return {"ok": True, "final": str(final),
-            "srt": str(srt_path) if srt_path.exists() else None,
-            "script": str(outdir / "final_script.txt"),
-            "quality": str(outdir / "quality.json"),
-            "seconds": tline.total_seconds, "cues": len(cues),
-            "failed_cues": failed_cues}
+    return {
+        "ok": True,
+        "final": str(final),
+        "srt": str(srt_path) if srt_path.exists() else None,
+        "script": str(outdir / "final_script.txt"),
+        "quality": str(outdir / "quality.json"),
+        "seconds": tline.total_seconds,
+        "cues": len(cues),
+        "failed_cues": failed_cues,
+    }

@@ -1,4 +1,5 @@
 """FastAPI application factory for integrated Phase 6 application."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -9,9 +10,19 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..common.logging_util import get_logger
-from .middleware import install_exception_handlers, install_middleware
 from ..services.observability import metrics as metrics_registry
-from .routers import artifacts, jobs, models, pipeline, projects, providers, system, uploads, workers
+from .middleware import install_exception_handlers, install_middleware
+from .routers import (
+    artifacts,
+    jobs,
+    models,
+    pipeline,
+    projects,
+    providers,
+    system,
+    uploads,
+    workers,
+)
 from .state import APIState, build_api_state
 from .websocket.manager import WebSocketManager
 from .websocket.routes import router as websocket_router
@@ -80,7 +91,9 @@ def create_app(
 
     @app.get("/health", include_in_schema=False)
     async def root_health():
-        return JSONResponse({"ok": True, "service": "chatterbox-manga-studio", "api": "/api/v1/system/health"})
+        return JSONResponse(
+            {"ok": True, "service": "chatterbox-manga-studio", "api": "/api/v1/system/health"}
+        )
 
     @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
     async def root_metrics():
@@ -100,9 +113,15 @@ def _install_frontend(app: FastAPI, frontend_dist: Path) -> None:
     index = frontend_dist / "index.html"
     assets = frontend_dist / "assets"
     if not index.exists():
+
         @app.get("/", include_in_schema=False)
         async def api_index():
-            return {"ok": True, "message": "React frontend build not found; API is available under /api/v1", "docs": "/docs"}
+            return {
+                "ok": True,
+                "message": "React frontend build not found; API is available under /api/v1",
+                "docs": "/docs",
+            }
+
         return
 
     if assets.exists():

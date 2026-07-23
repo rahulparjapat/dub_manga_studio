@@ -9,7 +9,9 @@ Enforces the REAL YouTube limits (verified 2026):
 We both PROMPT the model to respect these AND hard-clamp the result so the output
 can never exceed a limit even if the model overshoots.
 """
+
 from __future__ import annotations
+
 import csv
 import io
 import json
@@ -19,7 +21,7 @@ METADATA_LANGUAGES = ["English", "Hindi", "Hinglish Roman", "Hinglish Devanagari
 # Official YouTube limits.
 TITLE_MAX = 100
 DESC_MAX_BYTES = 5000
-TAGS_MAX_CHARS = 500     # combined
+TAGS_MAX_CHARS = 500  # combined
 HASHTAGS_MAX = 15
 
 
@@ -76,12 +78,13 @@ def _truncate_bytes(text: str, max_bytes: int) -> str:
 def clamp_tags(tags: list[str], max_chars: int = TAGS_MAX_CHARS) -> list[str]:
     """Keep tags in order until the COMBINED length (YouTube counts commas too,
     roughly) would exceed max_chars; drop the rest."""
-    out, total = [], 0
+    out: list[str] = []
+    total = 0
     for t in tags:
         t = str(t).strip()
         if not t:
             continue
-        add = len(t) + (1 if out else 0)   # +1 approximates the separator
+        add = len(t) + (1 if out else 0)  # +1 approximates the separator
         if total + add > max_chars:
             break
         out.append(t)
@@ -100,7 +103,8 @@ def clamp_to_youtube_limits(md: dict) -> dict:
         if not h.startswith("#"):
             h = "#" + h.lstrip("#")
         if h.lower() not in seen:
-            seen.add(h.lower()); clean.append(h)
+            seen.add(h.lower())
+            clean.append(h)
         if len(clean) >= HASHTAGS_MAX:
             break
     return {"title": title, "description": desc, "tags": tags, "hashtags": clean}
@@ -123,10 +127,12 @@ def to_txt(md: dict) -> str:
     tags = ", ".join(md.get("tags", []))
     hashes = " ".join(md.get("hashtags", []))
     rep = limits_report(md)
-    return (f"TITLE ({rep['title_chars']} chars):\n{md.get('title','')}\n\n"
-            f"DESCRIPTION ({rep['description_bytes']} bytes):\n{md.get('description','')}\n\n"
-            f"TAGS ({rep['tags_chars']} chars):\n{tags}\n\n"
-            f"HASHTAGS ({rep['hashtags']}):\n{hashes}\n")
+    return (
+        f"TITLE ({rep['title_chars']} chars):\n{md.get('title','')}\n\n"
+        f"DESCRIPTION ({rep['description_bytes']} bytes):\n{md.get('description','')}\n\n"
+        f"TAGS ({rep['tags_chars']} chars):\n{tags}\n\n"
+        f"HASHTAGS ({rep['hashtags']}):\n{hashes}\n"
+    )
 
 
 def to_json(md: dict) -> str:

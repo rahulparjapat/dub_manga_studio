@@ -4,6 +4,7 @@ The bus deliberately avoids HTTP/gRPC and external broker requirements. It is
 safe to instantiate per application/container and can be backed by persistent
 storage later without changing publishers.
 """
+
 from __future__ import annotations
 
 import asyncio

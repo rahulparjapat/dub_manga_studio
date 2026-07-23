@@ -1,5 +1,7 @@
 """Structured logging with correlation IDs and rotating file handler."""
+
 from __future__ import annotations
+
 import logging
 import logging.handlers
 import sys
@@ -16,10 +18,7 @@ def _configure_stdlib_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
 
-    fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        "%H:%M:%S"
-    )
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", "%H:%M:%S")
 
     # Console handler
     sh = logging.StreamHandler(sys.stdout)
@@ -31,10 +30,7 @@ def _configure_stdlib_logging() -> None:
         logdir = Path(__file__).resolve().parents[2].parent / "data" / "logs"
         logdir.mkdir(parents=True, exist_ok=True)
         fh = logging.handlers.RotatingFileHandler(
-            logdir / "studio.log",
-            maxBytes=5_000_000,
-            backupCount=3,
-            encoding="utf-8"
+            logdir / "studio.log", maxBytes=5_000_000, backupCount=3, encoding="utf-8"
         )
         fh.setFormatter(fmt)
         root.addHandler(fh)
@@ -58,7 +54,11 @@ def configure_logging() -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="%H:%M:%S"),
             structlog.processors.StackInfoRenderer(),
-            structlog.dev.ConsoleRenderer() if sys.stderr.isatty() else structlog.processors.JSONRenderer(),
+            (
+                structlog.dev.ConsoleRenderer()
+                if sys.stderr.isatty()
+                else structlog.processors.JSONRenderer()
+            ),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
         context_class=dict,

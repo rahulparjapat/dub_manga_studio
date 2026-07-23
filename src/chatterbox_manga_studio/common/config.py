@@ -1,13 +1,15 @@
 """Config loader with per-GPU profile resolution."""
+
 from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from .paths import CONFIG_YAML
 from .logging_util import get_logger
+from .paths import CONFIG_YAML
 
 log = get_logger("config")
 
@@ -34,6 +36,7 @@ def active_profile(cfg: dict | None = None) -> dict:
     if str(gpu).lower() == "auto":
         try:
             from .stageflow import detect_current_gpu
+
             detected = detect_current_gpu()
         except Exception:
             detected = "unknown"
@@ -93,7 +96,9 @@ def default_model_for_target(target: str, cfg: dict | None = None) -> str:
 def preset_for_style(style: str, cfg: dict | None = None) -> dict:
     cfg = cfg or load_config()
     tq = cfg.get("tts_quality", {})
-    name = tq.get("style_to_preset", {}).get(style) or tq.get("style_to_preset", {}).get("default", "natural")
+    name = tq.get("style_to_preset", {}).get(style) or tq.get("style_to_preset", {}).get(
+        "default", "natural"
+    )
     return dict(tq.get("presets", {}).get(name, {}))
 
 

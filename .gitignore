@@ -18,3 +18,5 @@ workers_envs/
 .venv/
 __pycache__/
 *.pyc
+src/chatterbox_manga_studio.egg-info/
+data/

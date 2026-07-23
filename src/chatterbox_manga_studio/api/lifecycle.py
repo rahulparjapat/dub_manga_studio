@@ -3,6 +3,7 @@
 This module wires existing Phase 1-5 services together at startup and manages
 background health/monitoring tasks. It does not introduce new business logic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,12 @@ from ..common.logging_util import get_logger
 from ..services.events import EventBus, EventType
 from ..services.plugin_registry import PluginRegistry
 from ..services.plugin_runtime import build_plugin_runtimes
-from ..services.provider_manager import FunctionProvider, ProviderManager, ProviderRequest, RateLimitConfig
+from ..services.provider_manager import (
+    FunctionProvider,
+    ProviderManager,
+    ProviderRequest,
+    RateLimitConfig,
+)
 from ..services.worker_pool import WorkerDescriptor, WorkerPool
 
 log = get_logger("api.lifecycle")
@@ -61,7 +67,9 @@ class BackgroundServiceManager:
     async def _worker_health_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                await self.workers.health_monitor_once(stale_after_seconds=self.interval_seconds * 3)
+                await self.workers.health_monitor_once(
+                    stale_after_seconds=self.interval_seconds * 3
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("worker health loop failed: %s", exc)
             await _sleep_or_stop(self._stop, self.interval_seconds)
@@ -82,7 +90,7 @@ class BackgroundServiceManager:
 async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> None:
     try:
         await asyncio.wait_for(stop.wait(), timeout=seconds)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return
 
 
@@ -94,7 +102,7 @@ async def initialize_providers(manager: ProviderManager) -> None:
             FunctionProvider(
                 provider_name,
                 invoke=_provider_invoke(provider_name),
-                health_check=lambda provider_name=provider_name: bool(get_key(provider_name)),
+                health_check=lambda provider_name=provider_name: bool(get_key(provider_name)),  # type: ignore[misc]
             ),
             priority=(index + 1) * 10,
             retries=2,

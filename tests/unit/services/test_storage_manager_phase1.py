@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from chatterbox_manga_studio.services.storage_manager import StorageManager, create_filesystem_stores
+from chatterbox_manga_studio.services.storage_manager import (
+    PermissionError as StoragePermissionError,
+)
+from chatterbox_manga_studio.services.storage_manager import (
+    StorageManager,
+    create_filesystem_stores,
+)
 
 
 @pytest.fixture
@@ -38,7 +44,7 @@ async def test_storage_manager_object_kv_queue_lock(storage):
 
 @pytest.mark.asyncio
 async def test_storage_manager_blocks_path_traversal(storage):
-    with pytest.raises(Exception):
+    with pytest.raises(StoragePermissionError):
         await storage.put_object("../escape.txt", b"bad")
 
 

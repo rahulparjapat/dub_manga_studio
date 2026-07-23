@@ -23,7 +23,12 @@ class DummyWorker(BaseWorker):
 
 
 def _post(url: str, payload: dict) -> dict:
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     with urllib.request.urlopen(req, timeout=5) as response:
         return json.loads(response.read().decode())
 
@@ -58,7 +63,10 @@ def test_base_worker_health_metrics_registration_and_generation(worker_server):
     out = tmp_path / "out.wav"
     loaded = _post(f"{url}/load", {})
     assert loaded["loaded"] is True
-    generated = _post(f"{url}/generate", {"request_id": "r1", "text": "hello", "out_path": str(out), "target": "english"})
+    generated = _post(
+        f"{url}/generate",
+        {"request_id": "r1", "text": "hello", "out_path": str(out), "target": "english"},
+    )
     assert generated["ok"] is True
     assert out.exists()
 

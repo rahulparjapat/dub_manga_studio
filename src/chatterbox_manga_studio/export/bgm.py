@@ -3,7 +3,9 @@
 -16 LUFS loudness target, -1.5 dBTP true peak (verified from spec).
 Sidechain ducking lowers BGM under narration.
 """
+
 from __future__ import annotations
+
 from ..common.config import load_config
 
 
@@ -17,8 +19,12 @@ def clean_dub_audio_filter() -> str | None:
     return None
 
 
-def bgm_mix_filter(duck: bool = True, bgm_gain_db: float = -12.0,
-                   duck_ratio: float = 8.0, duck_threshold: float = 0.05) -> str:
+def bgm_mix_filter(
+    duck: bool = True,
+    bgm_gain_db: float = -12.0,
+    duck_ratio: float = 8.0,
+    duck_threshold: float = 0.05,
+) -> str:
     """
     Build filter_complex to mix narration [1:a] over BGM [2:a].
     - narration is the sidechain trigger

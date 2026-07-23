@@ -7,19 +7,19 @@ Only StorageManager should know about concrete implementations.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from pathlib import Path
-from typing import Any, BinaryIO, Generic, TypeVar
-from uuid import UUID
+from enum import StrEnum
+from typing import Any, BinaryIO, TypeVar
 
 T = TypeVar("T")
 
 
-class StorageBackend(str, Enum):
+class StorageBackend(StrEnum):
     """Supported storage backends."""
+
     FILESYSTEM = "filesystem"
     POSTGRESQL = "postgresql"
     S3 = "s3"
@@ -28,7 +28,10 @@ class StorageBackend(str, Enum):
 
 class StorageError(Exception):
     """Base storage error."""
-    def __init__(self, message: str, backend: StorageBackend | None = None, details: dict | None = None):
+
+    def __init__(
+        self, message: str, backend: StorageBackend | None = None, details: dict | None = None
+    ):
         super().__init__(message)
         self.backend = backend
         self.details = details or {}
@@ -36,35 +39,49 @@ class StorageError(Exception):
 
 class NotFoundError(StorageError):
     """Resource not found."""
+
     def __init__(self, key: str, backend: StorageBackend | None = None):
         super().__init__(f"Key not found: {key}", backend, {"key": key})
 
 
 class ConflictError(StorageError):
     """Resource already exists."""
+
     def __init__(self, key: str, backend: StorageBackend | None = None):
         super().__init__(f"Key already exists: {key}", backend, {"key": key})
 
 
 class PermissionError(StorageError):
     """Permission denied."""
+
     def __init__(self, operation: str, path: str, backend: StorageBackend | None = None):
-        super().__init__(f"Permission denied for {operation} on {path}", backend, {"operation": operation, "path": str(path)})
+        super().__init__(
+            f"Permission denied for {operation} on {path}",
+            backend,
+            {"operation": operation, "path": str(path)},
+        )
 
 
 class QuotaExceededError(StorageError):
     """Storage quota exceeded."""
-    def __init__(self, backend: StorageBackend | None = None, limit_bytes: int | None = None, used_bytes: int | None = None):
+
+    def __init__(
+        self,
+        backend: StorageBackend | None = None,
+        limit_bytes: int | None = None,
+        used_bytes: int | None = None,
+    ):
         super().__init__(
             "Storage quota exceeded",
             backend,
-            {"limit_bytes": limit_bytes, "used_bytes": used_bytes}
+            {"limit_bytes": limit_bytes, "used_bytes": used_bytes},
         )
 
 
 @dataclass
 class StorageMetadata:
     """Metadata for a stored object."""
+
     key: str
     size_bytes: int
     content_type: str | None = None
@@ -270,7 +287,9 @@ class FileLockInterface(StorageBackendInterface, ABC):
     """Interface for distributed file locking."""
 
     @abstractmethod
-    async def acquire(self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10) -> bool:
+    async def acquire(
+        self, key: str, ttl: int = 30, blocking: bool = True, blocking_timeout: int = 10
+    ) -> bool:
         """Acquire a lock. Returns True if acquired."""
         pass
 
@@ -308,19 +327,25 @@ class StorageManager:
         """Register a storage backend."""
         self._backends[backend.backend_type] = backend
 
-    def register_object_store(self, name: str, store: ObjectStorageInterface, default: bool = False) -> None:
+    def register_object_store(
+        self, name: str, store: ObjectStorageInterface, default: bool = False
+    ) -> None:
         """Register an object store."""
         self._object_stores[name] = store
         if default or self._default_object_store is None:
             self._default_object_store = name
 
-    def register_kv_store(self, name: str, store: KeyValueStorageInterface, default: bool = False) -> None:
+    def register_kv_store(
+        self, name: str, store: KeyValueStorageInterface, default: bool = False
+    ) -> None:
         """Register a key-value store."""
         self._kv_stores[name] = store
         if default or self._default_kv_store is None:
             self._default_kv_store = name
 
-    def register_queue(self, name: str, queue: QueueStorageInterface, default: bool = False) -> None:
+    def register_queue(
+        self, name: str, queue: QueueStorageInterface, default: bool = False
+    ) -> None:
         """Register a queue."""
         self._queues[name] = queue
         if default or self._default_queue is None:

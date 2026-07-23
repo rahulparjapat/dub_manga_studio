@@ -1,5 +1,7 @@
 """Unit tests for StorageManager and filesystem backend."""
+
 from __future__ import annotations
+
 import asyncio
 import tempfile
 from pathlib import Path
@@ -7,25 +9,22 @@ from pathlib import Path
 import pytest
 
 from chatterbox_manga_studio.services.storage_manager import (
+    PermissionError as StoragePermissionError,
+)
+from chatterbox_manga_studio.services.storage_manager import (
     StorageManager,
-    StorageBackend,
     StorageMetadata,
-    StorageError,
-    NotFoundError,
-    ConflictError,
-    PermissionError,
 )
 from chatterbox_manga_studio.services.storage_manager.filesystem import (
-    FilesystemObjectStore,
     FilesystemKVStore,
-    FilesystemQueue,
     FilesystemLock,
+    FilesystemObjectStore,
+    FilesystemQueue,
     create_filesystem_stores,
 )
 from chatterbox_manga_studio.services.storage_manager.storage_manager import (
-    StorageManager as _StorageManager,
-    set_storage_manager,
     get_storage_manager,
+    set_storage_manager,
 )
 
 
@@ -87,6 +86,7 @@ class TestFilesystemObjectStore:
     @pytest.mark.asyncio
     async def test_put_get_stream(self, store):
         from io import BytesIO
+
         data = b"Stream test data"
         await store.put("stream.bin", data)
 
@@ -150,12 +150,14 @@ class TestFilesystemObjectStore:
     async def test_not_found(self, store):
         with pytest.raises(Exception) as exc_info:
             await store.get("nonexistent.txt")
-        assert "not found" in str(exc_info.value).lower() or "not found" in str(exc_info.value).lower()
+        assert (
+            "not found" in str(exc_info.value).lower() or "not found" in str(exc_info.value).lower()
+        )
 
     @pytest.mark.asyncio
     async def test_permission_error(self, store):
         # Try to access outside root
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(StoragePermissionError):
             await store.put("../outside.txt", b"bad")
         # Should raise permission error
 
@@ -183,7 +185,6 @@ class TestFilesystemKVStore:
         await store.set("ttl_key", "expires", ttl=1)  # 1 second TTL
         assert await store.get("ttl_key") == "expires"
 
-        import asyncio
         await asyncio.sleep(1.5)
         assert await store.get("ttl_key") is None
 
@@ -338,6 +339,7 @@ class TestGlobalStorageManager:
     def test_get_uninitialized(self):
         # Clear global
         import chatterbox_manga_studio.services.storage_manager.storage_manager as sm
+
         sm._storage_manager = None
 
         with pytest.raises(RuntimeError):

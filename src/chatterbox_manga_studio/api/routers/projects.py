@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -12,7 +12,7 @@ PREFIX = "projects:meta:"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -20,7 +20,13 @@ async def create_project(request: ProjectCreateRequest, storage=Depends(get_stor
     key = PREFIX + request.project_id
     if await storage.get_kv(key):
         raise HTTPException(status_code=409, detail="project already exists")
-    project = ProjectResponse(project_id=request.project_id, title=request.title, metadata=request.metadata, created_at=_now(), updated_at=_now())
+    project = ProjectResponse(
+        project_id=request.project_id,
+        title=request.title,
+        metadata=request.metadata,
+        created_at=_now(),
+        updated_at=_now(),
+    )
     await storage.set_kv(key, project.model_dump(mode="json"))
     return project
 
@@ -44,7 +50,9 @@ async def get_project(project_id: str, storage=Depends(get_storage)):
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: str, request: ProjectUpdateRequest, storage=Depends(get_storage)):
+async def update_project(
+    project_id: str, request: ProjectUpdateRequest, storage=Depends(get_storage)
+):
     data = await storage.get_kv(PREFIX + project_id)
     if not data:
         raise HTTPException(status_code=404, detail="project not found")

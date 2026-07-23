@@ -14,12 +14,19 @@ subtitle region is touched):
 Blur safety: radii are clamped to the crop size to avoid FFmpeg
 'Invalid chroma_param radius' failures on small crops.
 """
+
 from __future__ import annotations
 
 # Order matters for the UI dropdown; first item is the default.
 MASK_TYPES = [
-    "Blur + dark band", "Blur (Gaussian)", "Box blur", "Pixelate / Mosaic",
-    "Motion blur", "Frosted glass", "Dark band", "Cover",
+    "Blur + dark band",
+    "Blur (Gaussian)",
+    "Box blur",
+    "Pixelate / Mosaic",
+    "Motion blur",
+    "Frosted glass",
+    "Dark band",
+    "Cover",
 ]
 
 MASK_COLORS = ["black", "white", "gray", "darkblue", "navy", "red", "green"]
@@ -29,7 +36,7 @@ def _safe_blur_radii(w: int, h: int, strength: int):
     """Luma/chroma radii kept within FFmpeg boxblur limits for the crop size."""
     max_luma = max(1, min(w, h) // 2 - 1)
     luma = max(1, min(strength, max_luma))
-    max_chroma = max(1, min(w, h) // 4 - 1)     # chroma subsampled (4:2:0)
+    max_chroma = max(1, min(w, h) // 4 - 1)  # chroma subsampled (4:2:0)
     chroma = max(1, min(strength // 2 or 1, max_chroma))
     return luma, chroma
 
@@ -39,9 +46,16 @@ def _overlay(crop_effect: str, x: int, y: int) -> str:
     return f"[0:v]{crop_effect}[fx];[0:v][fx]overlay={x}:{y}[v]"
 
 
-def build_mask_filter(mask_type: str, x: int, y: int, w: int, h: int,
-                      strength: int = 10, band_opacity: float = 0.6,
-                      color: str = "black") -> str:
+def build_mask_filter(
+    mask_type: str,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    strength: int = 10,
+    band_opacity: float = 0.6,
+    color: str = "black",
+) -> str:
     """Return an FFmpeg -filter_complex fragment producing [v].
 
     color: fill for 'Dark band' / 'Cover' / the band in 'Blur + dark band'
@@ -64,8 +78,8 @@ def build_mask_filter(mask_type: str, x: int, y: int, w: int, h: int,
     if mask_type in ("Pixelate / Mosaic", "Pixelate"):
         px = max(2, s)
         return _overlay(
-            f"{crop},scale=iw/{px}:ih/{px}:flags=neighbor,"
-            f"scale={w}:{h}:flags=neighbor", x, y)
+            f"{crop},scale=iw/{px}:ih/{px}:flags=neighbor," f"scale={w}:{h}:flags=neighbor", x, y
+        )
 
     if mask_type == "Motion blur":
         # directional smear: wide horizontal avgblur radius, tiny vertical.
@@ -80,24 +94,26 @@ def build_mask_filter(mask_type: str, x: int, y: int, w: int, h: int,
         return _overlay(f"{crop},noise=alls={nz}:allf=t,gblur=sigma={sigma}", x, y)
 
     if mask_type == "Dark band":
-        return (f"[0:v]drawbox=x={x}:y={y}:w={w}:h={h}:"
-                f"color={col}@{band_opacity}:t=fill[v]")
+        return f"[0:v]drawbox=x={x}:y={y}:w={w}:h={h}:" f"color={col}@{band_opacity}:t=fill[v]"
 
     if mask_type == "Blur + dark band":
         sigma = max(1, min(s, 50))
-        return (f"[0:v]{crop},gblur=sigma={sigma}[fx];"
-                f"[0:v][fx]overlay={x}:{y}[tmp];"
-                f"[tmp]drawbox=x={x}:y={y}:w={w}:h={h}:"
-                f"color={col}@{band_opacity}:t=fill[v]")
+        return (
+            f"[0:v]{crop},gblur=sigma={sigma}[fx];"
+            f"[0:v][fx]overlay={x}:{y}[tmp];"
+            f"[tmp]drawbox=x={x}:y={y}:w={w}:h={h}:"
+            f"color={col}@{band_opacity}:t=fill[v]"
+        )
 
     if mask_type == "Cover":
-        return (f"[0:v]drawbox=x={x}:y={y}:w={w}:h={h}:"
-                f"color={col}:t=fill[v]")
+        return f"[0:v]drawbox=x={x}:y={y}:w={w}:h={h}:" f"color={col}:t=fill[v]"
 
     return "[0:v]copy[v]"
 
 
 def build_preview_rect(x: int, y: int, w: int, h: int) -> str:
     """Yellow rectangle showing selected mask area."""
-    return (f"[0:v]drawbox=x={int(x)}:y={int(y)}:w={max(2,int(w))}:h={max(2,int(h))}:"
-            f"color=yellow:t=4[v]")
+    return (
+        f"[0:v]drawbox=x={int(x)}:y={int(y)}:w={max(2,int(w))}:h={max(2,int(h))}:"
+        f"color=yellow:t=4[v]"
+    )

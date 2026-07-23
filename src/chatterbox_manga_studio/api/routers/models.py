@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from ..dependencies import get_models
 from ..schemas import ModelLoadRequest, OkResponse

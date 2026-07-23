@@ -5,6 +5,7 @@ business logic itself; workers or workflow runners claim jobs and report state
 through this API. This keeps the app functional during migration while enabling
 resumable, checkpoint-backed workflows in Phase 1.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

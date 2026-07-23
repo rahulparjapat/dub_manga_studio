@@ -1,19 +1,19 @@
 """Mock worker for testing (CPU-only, generates silence)."""
+
 from __future__ import annotations
+
 import asyncio
 import os
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.config import load_config
 from core.logging import get_logger
 
 log = get_logger("mock_worker")
@@ -85,15 +85,12 @@ async def generate(req: GenRequest):
     # Write WAV
     sf.write(req.out_path, audio, sr)
 
-    return GenResponse(
-        ok=True,
-        wav_path=req.out_path,
-        seconds=duration
-    )
+    return GenResponse(ok=True, wav_path=req.out_path, seconds=duration)
 
 
 def main():
     import uvicorn
+
     port = int(os.environ.get("PORT", "8100"))
     log.info("Starting mock worker on port %d", port)
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

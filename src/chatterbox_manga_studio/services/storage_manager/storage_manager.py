@@ -3,6 +3,7 @@
 All Phase 1 services use this facade for persistence. The manager owns concrete
 backend instances; callers only see object, key-value, queue, and lock methods.
 """
+
 from __future__ import annotations
 
 from typing import Any, BinaryIO
@@ -39,19 +40,25 @@ class StorageManager:
     def _register_component(self, name: str, component: StorageBackendInterface) -> None:
         self._backends.setdefault(name, component)
 
-    def register_object_store(self, name: str, store: ObjectStorageInterface, default: bool = False) -> None:
+    def register_object_store(
+        self, name: str, store: ObjectStorageInterface, default: bool = False
+    ) -> None:
         self._object_stores[name] = store
         self._register_component(f"object:{name}", store)
         if default or self._default_object_store is None:
             self._default_object_store = name
 
-    def register_kv_store(self, name: str, store: KeyValueStorageInterface, default: bool = False) -> None:
+    def register_kv_store(
+        self, name: str, store: KeyValueStorageInterface, default: bool = False
+    ) -> None:
         self._kv_stores[name] = store
         self._register_component(f"kv:{name}", store)
         if default or self._default_kv_store is None:
             self._default_kv_store = name
 
-    def register_queue(self, name: str, queue: QueueStorageInterface, default: bool = False) -> None:
+    def register_queue(
+        self, name: str, queue: QueueStorageInterface, default: bool = False
+    ) -> None:
         self._queues[name] = queue
         self._register_component(f"queue:{name}", queue)
         if default or self._default_queue_store is None:
@@ -106,7 +113,11 @@ class StorageManager:
         for backend in self._backends.values():
             by_family.setdefault(backend.backend_type, [])
         for family in by_family:
-            checks = [value for name, value in results.items() if self._backends[name].backend_type == family]
+            checks = [
+                value
+                for name, value in results.items()
+                if self._backends[name].backend_type == family
+            ]
             results[family.value] = all(checks) if checks else False
         return results
 
@@ -132,7 +143,9 @@ class StorageManager:
     async def object_exists(self, key: str) -> bool:
         return await self.object_store().exists(key)
 
-    async def list_objects(self, prefix: str = "", max_keys: int = 1_000) -> tuple[list[StorageMetadata], str | None]:
+    async def list_objects(
+        self, prefix: str = "", max_keys: int = 1_000
+    ) -> tuple[list[StorageMetadata], str | None]:
         return await self.object_store().list(prefix=prefix, max_keys=max_keys)
 
     async def set_kv(self, key: str, value: Any, ttl: int | None = None) -> None:

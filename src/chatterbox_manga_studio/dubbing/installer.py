@@ -3,15 +3,15 @@
 Runs scripts/install_model_<id>.sh only when a model is first needed, after the
 disk manager has evicted other models to make room. Streams progress to a callback.
 """
-from __future__ import annotations
-import subprocess
-import threading
-from pathlib import Path
 
-from ..common.paths import PROJECT_ROOT, WORKERS_ENVS
+from __future__ import annotations
+
+import subprocess
+
 from ..common.diskmanager import make_room_for
 from ..common.hf_token import export_token_to_env
 from ..common.logging_util import get_logger
+from ..common.paths import PROJECT_ROOT, WORKERS_ENVS
 
 log = get_logger("installer")
 
@@ -39,10 +39,15 @@ def install_model(model_id: str, progress=None) -> dict:
     if progress:
         progress(f"Installing {model_id} (one-time; this can take several minutes)…")
     proc = subprocess.Popen(
-        ["bash", str(script)], cwd=str(PROJECT_ROOT),
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        ["bash", str(script)],
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
-    tail = []
+    tail: list[str] = []
+    assert proc.stdout is not None
     for line in proc.stdout:  # stream install log -> Live Log tab + progress box
         line = line.rstrip()
         if line:
@@ -53,6 +58,5 @@ def install_model(model_id: str, progress=None) -> dict:
             progress("\n".join(tail))
     proc.wait()
     if proc.returncode != 0 or not is_installed(model_id):
-        return {"ok": False, "message": f"{model_id} install failed. Last log:\n" +
-                "\n".join(tail)}
+        return {"ok": False, "message": f"{model_id} install failed. Last log:\n" + "\n".join(tail)}
     return {"ok": True, "message": f"{model_id} installed."}

@@ -1,20 +1,19 @@
 """S3-compatible storage backend implementation."""
+
 from __future__ import annotations
+
 import hashlib
 import mimetypes
-from datetime import datetime
-from typing import Any, BinaryIO
 from io import BytesIO
+from typing import Any
 
 import boto3
 from botocore.config import Config
 
 from ..storage_manager import (
-    ObjectStorageInterface,
+    NotFoundError,
     StorageBackend,
     StorageMetadata,
-    StorageError,
-    NotFoundError,
 )
 
 
@@ -47,6 +46,7 @@ class S3ObjectStore:
     @property
     def backend_type(self):
         from ..storage_manager import StorageBackend
+
         return StorageBackend.S3
 
     async def initialize(self) -> None:
@@ -95,10 +95,9 @@ class S3ObjectStore:
                 chunks.append(chunk)
             blob = b"".join(chunks)
 
-        size = len(blob)
+        len(blob)
         etag = self._compute_etag(blob)
         content_type = content_type or mimetypes.guess_type(key)[0] or "application/octet-stream"
-        meta_dict = metadata or {}
 
         extra_args = {"ContentType": content_type}
         if metadata:
@@ -125,7 +124,7 @@ class S3ObjectStore:
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=s3_key)
         except self.client.exceptions.NoSuchKey:
-            raise NotFoundError(key, StorageBackend.S3)
+            raise NotFoundError(key, StorageBackend.S3) from None
 
         blob = response["Body"].read()
         meta = StorageMetadata(
@@ -163,7 +162,7 @@ class S3ObjectStore:
         try:
             response = self.client.head_object(Bucket=self.bucket, Key=s3_key)
         except self.client.exceptions.NoSuchKey:
-            raise NotFoundError(key, StorageBackend.S3)
+            raise NotFoundError(key, StorageBackend.S3) from None
 
         return StorageMetadata(
             key=key,
@@ -200,15 +199,17 @@ class S3ObjectStore:
             if len(results) >= max_keys:
                 break
             s3_key = obj["Key"]
-            rel_key = s3_key[len(self.prefix):] if s3_key.startswith(self.prefix) else s3_key
-            results.append(StorageMetadata(
-                key=rel_key,
-                size_bytes=obj["Size"],
-                content_type=mimetypes.guess_type(rel_key)[0] or "application/octet-stream",
-                etag=obj["ETag"].strip('"'),
-                metadata={},
-                backend=StorageBackend.S3,
-            ))
+            rel_key = s3_key[len(self.prefix) :] if s3_key.startswith(self.prefix) else s3_key
+            results.append(
+                StorageMetadata(
+                    key=rel_key,
+                    size_bytes=obj["Size"],
+                    content_type=mimetypes.guess_type(rel_key)[0] or "application/octet-stream",
+                    etag=obj["ETag"].strip('"'),
+                    metadata={},
+                    backend=StorageBackend.S3,
+                )
+            )
 
         next_token = response.get("NextContinuationToken")
         if not response.get("IsTruncated"):

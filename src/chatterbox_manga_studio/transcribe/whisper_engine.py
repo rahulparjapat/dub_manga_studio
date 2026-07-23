@@ -10,22 +10,25 @@ Two run modes:
     on the Ingest tab; auto-released (killed) right before TTS/dub loads a model
     so heavy models never OOM on the 16 GB T4.
 """
+
 from __future__ import annotations
+
 import json
 import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
-from ..common.config import load_config, active_profile
-from ..common.paths import WORKERS_ENVS, PROJECT_ROOT
+from ..common.config import active_profile, load_config
 from ..common.hf_token import export_token_to_env
 from ..common.logging_util import get_logger
+from ..common.paths import PROJECT_ROOT, WORKERS_ENVS
 
 log = get_logger("whisper")
 
 # ---- resident worker singleton (process + lock) ----
-_RESIDENT = {"proc": None, "device": None, "compute": None, "ready": False}
+_RESIDENT: dict[str, Any] = {"proc": None, "device": None, "compute": None, "ready": False}
 _LOCK = threading.Lock()
 
 
@@ -42,9 +45,16 @@ def _ensure_whisper_installed(progress=None) -> dict:
     if progress:
         progress("Installing Whisper once (~1.6 GB, cached permanently)…")
     script = PROJECT_ROOT / "scripts" / "install_model_whisper.sh"
-    proc = subprocess.Popen(["bash", str(script)], cwd=str(PROJECT_ROOT),
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    for line in proc.stdout:               # stream install log -> studio.log (Live Log tab)
+    proc = subprocess.Popen(
+        ["bash", str(script)],
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:  # stream install log -> studio.log (Live Log tab)
         line = line.rstrip()
         if line:
             log.info("whisper-install | %s", line)
@@ -58,7 +68,9 @@ def _ensure_whisper_installed(progress=None) -> dict:
 
 def _build_args(video_path, out_dir, source_language, wc, prof) -> dict:
     return {
-        "video": video_path, "out_dir": out_dir, "language": source_language,
+        "video": video_path,
+        "out_dir": out_dir,
+        "language": source_language,
         "model": wc.get("model", "large-v3"),
         "compute_type": wc.get("compute_type", "int8_float16"),
         "vad": wc.get("vad", True),
@@ -84,26 +96,42 @@ def warm_start(progress=None) -> dict:
     with _LOCK:
         p = _RESIDENT["proc"]
         if p is not None and p.poll() is None:
-            return {"ok": True, "already": True, "device": _RESIDENT["device"],
-                    "compute": _RESIDENT["compute"], "ready": _RESIDENT["ready"]}
+            return {
+                "ok": True,
+                "already": True,
+                "device": _RESIDENT["device"],
+                "compute": _RESIDENT["compute"],
+                "ready": _RESIDENT["ready"],
+            }
         inst = _ensure_whisper_installed(progress)
         if not inst["ok"]:
             return inst
-        cfg = load_config(); wc = cfg.get("whisper", {})
+        cfg = load_config()
+        wc = cfg.get("whisper", {})
         export_token_to_env()
         import os
+
         env = dict(os.environ)
-        env["CMS_WHISPER_INIT"] = json.dumps({
-            "model": wc.get("model", "large-v3"),
-            "compute_type": wc.get("compute_type", "int8_float16")})
+        env["CMS_WHISPER_INIT"] = json.dumps(
+            {
+                "model": wc.get("model", "large-v3"),
+                "compute_type": wc.get("compute_type", "int8_float16"),
+            }
+        )
         worker = PROJECT_ROOT / "scripts" / "whisper_worker.py"
         if progress:
             progress("Loading Whisper onto the GPU (stays warm for instant transcribe)…")
         log.info("Starting resident Whisper worker (warm on GPU)…")
         proc = subprocess.Popen(
             [str(_venv_python()), str(worker), "--serve"],
-            cwd=str(PROJECT_ROOT), env=env, text=True,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,
+        )
         _RESIDENT.update(proc=proc, device=None, compute=None, ready=False)
 
     # drain stderr (worker logs) to studio.log in the background
@@ -112,17 +140,21 @@ def warm_start(progress=None) -> dict:
             ln = ln.rstrip()
             if ln:
                 log.info("whisper-warm | %s", ln)
+
     threading.Thread(target=_pump_err, args=(proc,), daemon=True).start()
 
     # wait for the "ready" line on stdout (bounded)
     ready = {"ok": False}
     t0 = time.time()
-    while time.time() - t0 < 900:          # generous: first run downloads weights
+    assert proc.stdout is not None
+    while time.time() - t0 < 900:  # generous: first run downloads weights
         line = proc.stdout.readline()
         if not line:
             if proc.poll() is not None:
-                return {"ok": False, "error": "warm worker exited during startup "
-                        "(see Live Logs)."}
+                return {
+                    "ok": False,
+                    "error": "warm worker exited during startup " "(see Live Logs).",
+                }
             continue
         line = line.strip()
         if not line:
@@ -134,25 +166,38 @@ def warm_start(progress=None) -> dict:
             continue
         if msg.get("event") == "ready":
             with _LOCK:
-                _RESIDENT.update(device=msg.get("device"),
-                                 compute=msg.get("compute_type"),
-                                 ready=bool(msg.get("ok")))
-            ready = {"ok": bool(msg.get("ok")), "device": msg.get("device"),
-                     "compute": msg.get("compute_type"), "ready": bool(msg.get("ok"))}
+                _RESIDENT.update(
+                    device=msg.get("device"),
+                    compute=msg.get("compute_type"),
+                    ready=bool(msg.get("ok")),
+                )
+            ready = {
+                "ok": bool(msg.get("ok")),
+                "device": msg.get("device"),
+                "compute": msg.get("compute_type"),
+                "ready": bool(msg.get("ok")),
+            }
             break
     if not ready.get("ok"):
         log.warning("Whisper warm start did not confirm GPU readiness.")
     else:
-        log.info("Whisper is warm on %s (%s) — transcription will be instant.",
-                 ready.get("device"), ready.get("compute"))
+        log.info(
+            "Whisper is warm on %s (%s) — transcription will be instant.",
+            ready.get("device"),
+            ready.get("compute"),
+        )
     return ready
 
 
 def warm_status() -> dict:
     p = _RESIDENT["proc"]
     alive = p is not None and p.poll() is None
-    return {"alive": alive, "ready": _RESIDENT["ready"] and alive,
-            "device": _RESIDENT["device"], "compute": _RESIDENT["compute"]}
+    return {
+        "alive": alive,
+        "ready": _RESIDENT["ready"] and alive,
+        "device": _RESIDENT["device"],
+        "compute": _RESIDENT["compute"],
+    }
 
 
 def release_gpu(reason: str = "before TTS") -> None:
@@ -165,7 +210,8 @@ def release_gpu(reason: str = "before TTS") -> None:
         if p.poll() is None:
             log.info("Releasing resident Whisper GPU worker (%s)…", reason)
             try:
-                p.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n"); p.stdin.flush()
+                p.stdin.write(json.dumps({"cmd": "shutdown"}) + "\n")
+                p.stdin.flush()
             except Exception:
                 pass
             try:
@@ -207,8 +253,13 @@ def _transcribe_warm(args) -> dict | None:
             log.info("whisper-warm | %s", line)
 
 
-def transcribe(video_path: str, out_dir: str, source_language: str = "Auto",
-               chunk_seconds: int | None = None, progress=None) -> dict:
+def transcribe(
+    video_path: str,
+    out_dir: str,
+    source_language: str = "Auto",
+    chunk_seconds: int | None = None,
+    progress=None,
+) -> dict:
     """Transcribe a video. Uses the resident warm worker if one is running
     (instant), otherwise launches a one-shot worker.
 
@@ -233,10 +284,15 @@ def transcribe(video_path: str, out_dir: str, source_language: str = "Auto",
     if not inst["ok"]:
         return inst
     worker = PROJECT_ROOT / "scripts" / "whisper_worker.py"
-    log.info("Transcribing %s (model=%s, chunk=%ss) …",
-             video_path, args["model"], args["max_speech_s"])
-    proc = subprocess.run([str(_venv_python()), str(worker), json.dumps(args)],
-                          cwd=str(PROJECT_ROOT), capture_output=True, text=True)
+    log.info(
+        "Transcribing %s (model=%s, chunk=%ss) …", video_path, args["model"], args["max_speech_s"]
+    )
+    proc = subprocess.run(
+        [str(_venv_python()), str(worker), json.dumps(args)],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+    )
     for ln in (proc.stdout or "").splitlines():
         if ln.strip():
             log.info("whisper | %s", ln.strip())
@@ -249,19 +305,30 @@ def transcribe(video_path: str, out_dir: str, source_language: str = "Auto",
         return res
     except Exception:
         log.error("whisper worker error (unparseable output)")
-        return {"ok": False, "error": f"whisper worker error:\n{proc.stdout[-500:]}\n{proc.stderr[-500:]}"}
+        return {
+            "ok": False,
+            "error": f"whisper worker error:\n{proc.stdout[-500:]}\n{proc.stderr[-500:]}",
+        }
 
 
 def _log_result(res: dict) -> None:
     if res.get("ok"):
         dev = res.get("device")
-        log.info("Transcription done: %s cues in %ss video (device=%s, compute=%s, "
-                 "detected_lang=%s).", res.get("segments"), res.get("duration_s"),
-                 dev, res.get("compute_type"), res.get("language"))
+        log.info(
+            "Transcription done: %s cues in %ss video (device=%s, compute=%s, "
+            "detected_lang=%s).",
+            res.get("segments"),
+            res.get("duration_s"),
+            dev,
+            res.get("compute_type"),
+            res.get("language"),
+        )
         if dev == "cpu":
-            log.warning("Whisper ran on CPU — this is SLOW. To fix GPU, run: "
-                        "workers_envs/whisper/bin/pip install nvidia-cublas-cu12 "
-                        "'nvidia-cudnn-cu12>=9,<10' (see Live Logs for the reason).")
+            log.warning(
+                "Whisper ran on CPU — this is SLOW. To fix GPU, run: "
+                "workers_envs/whisper/bin/pip install nvidia-cublas-cu12 "
+                "'nvidia-cudnn-cu12>=9,<10' (see Live Logs for the reason)."
+            )
     else:
         log.error("Transcription failed: %s", res.get("error"))
 
@@ -274,13 +341,17 @@ def gpu_free_gb() -> float | None:
     fallback). No torch dependency (the app venv is torch-free)."""
     import shutil
     import subprocess
+
     exe = shutil.which("nvidia-smi")
     if not exe:
         return None
     try:
         out = subprocess.check_output(
             [exe, "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
-            text=True, stderr=subprocess.DEVNULL, timeout=5)
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
         return float(out.strip().splitlines()[0]) / 1024.0
     except Exception:  # noqa: BLE001
         return None
@@ -290,8 +361,12 @@ def gpu_free_gb() -> float | None:
 _WHISPER_NEED_GB = 3.0
 
 
-def transcribe_clip(audio_path: str, source_language: str = "Auto",
-                    tts_loaded_model: str | None = None, progress=None) -> dict:
+def transcribe_clip(
+    audio_path: str,
+    source_language: str = "Auto",
+    tts_loaded_model: str | None = None,
+    progress=None,
+) -> dict:
     """Transcribe ONE short reference clip and return its text.
 
     Designed for the 'clone my voice' flow: it runs Whisper in its own subprocess
@@ -304,6 +379,7 @@ def transcribe_clip(audio_path: str, source_language: str = "Auto",
     Whisper's own subprocess EXITS after transcribing, so its VRAM frees itself.
     """
     from ..common.paths import PROJECT_ROOT
+
     out_dir = PROJECT_ROOT / "data" / "cache" / "ref_transcribe"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -313,17 +389,25 @@ def transcribe_clip(audio_path: str, source_language: str = "Auto",
     if tts_loaded_model and (free is None or free < _WHISPER_NEED_GB):
         try:
             from ..dubbing.router import get_router
-            log.info("Not enough free VRAM (%.1f GB) for co-resident Whisper — "
-                     "briefly unloading TTS '%s' to transcribe the reference.",
-                     (free or 0.0), tts_loaded_model)
+
+            log.info(
+                "Not enough free VRAM (%.1f GB) for co-resident Whisper — "
+                "briefly unloading TTS '%s' to transcribe the reference.",
+                (free or 0.0),
+                tts_loaded_model,
+            )
             get_router().unload(tts_loaded_model)
             freed_tts = True
         except Exception as e:  # noqa: BLE001
             log.warning("could not pre-unload TTS (%s); trying co-resident.", e)
     else:
         if tts_loaded_model:
-            log.info("Transcribing reference CO-RESIDENT with TTS '%s' "
-                     "(%.1f GB free) — TTS stays loaded.", tts_loaded_model, free or 0)
+            log.info(
+                "Transcribing reference CO-RESIDENT with TTS '%s' "
+                "(%.1f GB free) — TTS stays loaded.",
+                tts_loaded_model,
+                free or 0,
+            )
 
     res = transcribe(audio_path, str(out_dir), source_language, progress=progress)
 
@@ -334,6 +418,10 @@ def transcribe_clip(audio_path: str, source_language: str = "Auto",
             text = tpath.read_text(encoding="utf-8").strip()
         except Exception:  # noqa: BLE001
             text = ""
-    return {"ok": res.get("ok", False), "text": text,
-            "device": res.get("device"), "freed_tts": freed_tts,
-            "error": res.get("error")}
+    return {
+        "ok": res.get("ok", False),
+        "text": text,
+        "device": res.get("device"),
+        "freed_tts": freed_tts,
+        "error": res.get("error"),
+    }
